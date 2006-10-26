@@ -1,0 +1,113 @@
+APACHE 2.2 STATUS:                                              -*-text-*-
+Last modified at [$Date: 2006-07-27 13:16:46 -0400 (Thu, 27 Jul 2006) $]
+
+The current version of this file can be found at:
+
+  * http://svn.apache.org/repos/asf/httpd/httpd/branches/2.2.x/STATUS
+
+Documentation status is maintained seperately and can be found at:
+
+  * docs/STATUS in this source tree, or
+  * http://svn.apache.org/repos/asf/httpd/httpd/trunk/docs/STATUS
+
+Consult the following STATUS files for information on related projects:
+
+  * http://svn.apache.org/repos/asf/apr/apr/trunk/STATUS
+  * http://svn.apache.org/repos/asf/apr/apr-util/trunk/STATUS
+
+Patches considered for backport are noted in their branches' STATUS:
+
+  * http://svn.apache.org/repos/asf/httpd/httpd/branches/1.3.x/STATUS
+  * http://svn.apache.org/repos/asf/httpd/httpd/branches/2.0.x/STATUS
+  * http://svn.apache.org/repos/asf/httpd/httpd/branches/2.2.x/STATUS
+
+
+Release history:
+    [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
+          while x.{even}.z versions are Stable/GA releases.]
+
+    2.2.3   : Tagged on July 27, 2006
+    2.2.2   : Released on May 1, 2006 as GA.
+    2.2.1   : Tagged on April 1, 2006, not released.
+    2.2.0   : Released on December 1, 2005 as GA.
+    2.1.10  : Tagged on November 19, 2005, not released.
+    2.1.9   : Released on November 5, 2005 as beta.
+    2.1.8   : Released on October 1, 2005 as beta.
+    2.1.7   : Released on September 12, 2005 as beta.
+    2.1.6   : Released on June 27, 2005 as alpha.
+    2.1.5   : Tagged on June 17, 2005.
+    2.1.4   : not released.
+    2.1.3   : Released on  February 22, 2005 as alpha.
+    2.1.2   : Released on December 8, 2004 as alpha.
+    2.1.1   : Released on November 19, 2004 as alpha.
+    2.1.0   : not released.
+
+
+Contributors looking for a mission:
+
+    * Just do an egrep on "TODO" or "XXX" in the source.
+
+    * Review the bug database at: http://issues.apache.org/bugzilla/
+
+    * Review the "PatchAvailable" bugs in the bug database:
+
+      https://issues.apache.org/bugzilla/buglist.cgi?bug_status=NEW&bug_status=ASSIGNED&bug_status=REOPENED&product=Apache+httpd-2&keywords=PatchAvailable
+
+      After testing, you can append a comment saying "Reviewed and tested".
+
+    * Open bugs in the bug database.
+
+
+CURRENT RELEASE NOTES:
+
+    * Forward binary compatibility is expected of Apache 2.2.x releases, such
+      that no MMN major number changes will occur.  Such changes can only be
+      made in the trunk.
+
+    * All commits to branches/2.2.x must be reflected in SVN trunk,
+      as well, if they apply.  Logical progression is commit to trunk,
+      get feedback and votes on list or in STATUS, then merge into
+      branches/2.2.x, as applicable.
+
+
+RELEASE SHOWSTOPPERS:
+
+
+PATCHES ACCEPTED TO BACKPORT FROM TRUNK:
+  [ start all new proposals below, under PATCHES PROPOSED. ]
+
+
+PATCHES PROPOSED TO BACKPORT FROM TRUNK:
+
+    * Bundled PCRE: backport r381783 from trunk
+      Fix brokenness on certain platforms when building with -DDEBUG.
+      http://svn.apache.org/viewvc?view=rev&revision=381783
+      +1 sctemme, fielding
+      -1 niq: Why are we hacking a third-party package as bundled,
+              rather than upstream?  This has potential for chaos
+              for modules (and we have a history of PCRE trouble)
+              as well as a maintenance nightmare!
+
+    * mod_isapi: Simply backport the host of fixes for compilation on unix,
+      PR#'s 15993 29098 30022 16637 30033 28089
+      by pushing to trunk/ rev 416293 of modules/arch/win32/mod_isapi.[ch]
+      which compiles without changes.  Source + Binary posted at
+        http://people.apache.org/~wrowe/mod_isapi-416293.zip
+      and delta posted at
+        http://people.apache.org/~wrowe/mod_isapi-416293-to-httpd-2.2.patch
+      +1 wrowe , fielding
+
+    * mod_deflate: don't choke on flush buckets in INFLATE filter
+      PR#39854
+      http://svn.apache.org/viewvc?rev=416165&view=rev
+      +0: niq
+          (this patch is now superseded by rpluem/wrowe better patch)
+      -0: wrowe - on quick glance the line 1091 change looks incomplete,
+          and I'm not convinced that we should ignore flush.  Has anyone
+          inquired of the proper mechanism or composed the appropriate
+          patch to finish an incomplete packet and resume encoding or
+          this entirely impossible in the current scheme of things?
+      rpluem: I discussed this with Justin at the ApacheCon and we discussed
+              ways how to fix this and take care about the flush buckets.
+              I am willing to propose patches, but due to personal time
+              constraints they will not show up before the second half of July.
