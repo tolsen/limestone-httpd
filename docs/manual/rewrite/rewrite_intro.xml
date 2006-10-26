@@ -1,0 +1,198 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
+<?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
+<!-- $LastChangedRevision: 421100 $ -->
+
+<!--
+ Licensed to the Apache Software Foundation (ASF) under one or more
+ contributor license agreements.  See the NOTICE file distributed with
+ this work for additional information regarding copyright ownership.
+ The ASF licenses this file to You under the Apache License, Version 2.0
+ (the "License"); you may not use this file except in compliance with
+ the License.  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+<manualpage metafile="rewrite_intro.xml.meta">
+<parentdocument href="./index.html"/>
+
+  <title>Apache mod_rewrite Introduction</title>
+
+<summary>
+<p>This document supplements the <module>mod_rewrite</module>
+<a href="../mod/mod_rewrite.html">reference documentation</a>. It
+describes the basic concepts necessary for use of
+<module>mod_rewrite</module>. Other documents go into greater detail,
+but this doc should help the beginner get their feet wet.
+</p>
+</summary>
+
+<seealso><a href="../mod/mod_rewrite.html">Module
+documentation</a></seealso>
+<seealso><a href="rewrite_tech.html">Technical details</a></seealso>
+<seealso><a href="rewrite_guide.html">Practical solutions to common
+problems</a></seealso>
+<seealso><a href="rewrite_guide_advanced.html">Practical solutions to
+advanced problems</a></seealso>
+
+<section id="introduction"><title>Introduction</title>
+<p>The Apache module <module>mod_rewrite</module> is a very powerful and
+sophisticated module which provides a way to do URL manipulations. With
+it, you can do nearly all types of URL rewriting that you may need. It
+is, however, somewhat complex, and may be intimidating to the beginner.
+There is also a tendency to treat rewrite rules as magic incantation,
+using them without actually understanding what they do.</p>
+
+<p>This document attempts to give sufficient background so that what
+follows is understood, rather than just copied blindly.
+</p>
+</section>
+
+<section id="regex"><title>Regular Expressions</title>
+
+<p>mod_rewrite uses the <a href="http://pcre.org/">Perl Compatible
+Regular Expression</a> vocabulary. In this document, we do not attempt
+to provide a detailed reference to regular expressions. For that, we
+recommend the <a href="http://pcre.org/pcre.txt">PCRE man pages</a>, the
+<a href="http://www.perldoc.com/perl5.8.0/pod/perlre.html">Perl regular
+expression man page</a>, and <a
+href="http://www.oreilly.com/catalog/regex2/index.html">Mastering
+Regular Expressions, by Jeffrey Friedl</a>.</p>
+
+<p>In this document, we attempt to provide enough of a regex vocabulary
+to get you started, without being overwhelming, in the hope that
+<directive module="mod_rewrite">RewriteRule</directive>s will be scientific
+formulae, rather than magical incantations.</p>
+
+<section id="regexvocab"><title>Regex vocabulary</title>
+
+<p>The following are the minimal building blocks you will need, in order
+to write regular expressions and <directive
+module="mod_rewrite">RewriteRule</directive>s. They certainly do not
+represent a complete regular expression vocabulary, but they are a good
+place to start, and should help you read basic regular expressions, as
+well as write your own.</p>
+
+<table>
+<tr>
+<th>Character</th>
+<th>Meaning</th>
+<th>Example</th>
+</tr>
+
+<tr><td><code>.</code></td><td>Matches any
+character</td><td><code>c.t</code> will match <code>cat</code>,
+<code>cot</code>, <code>cut</code>, etc.</td></tr>
+<tr><td><code>+</code></td><td>Repeats the previous match one or more
+times</td><td><code>a+</code> matches <code>a</code>, <code>aa</code>, 
+<code>aaa</code>, etc</td></tr>
+<tr><td><code>*</code></td><td>Repeats the previous match zero or more
+times.</td><td><code>a*</code> matches all the same things
+<code>a+</code> matches, but will also match an empty string.</td></tr>
+<tr><td><code>?</code></td><td>Makes the match optional.</td><td></td></tr>
+<tr><td><code>.</code></td><td>Matches any
+character</td><td><code>colou?r</code> will match <code>color</code> and
+<code>colour</code>.</td></tr>
+<tr><td><code>^</code></td><td>Called an anchor, matches the beginning
+of the string</td><td><code>^a</code> matches a string that begins with
+<code>a</code></td></tr>
+<tr><td><code>$</code></td><td>The other anchor, this matches the end of
+the string.</td><td><code>a$</code> matches a string that ends with
+<code>a</code>.</td></tr>
+<tr><td><code>( )</code></td><td>Groups several characters into a single
+unit, and captures a match for use in a backreference.</td><td><code>(ab)+</code> 
+matches <code>ababab</code> - that is, the <code>+</code> applies to the group.
+For more on backreferences see <a href="#InternalBackRefs">below</a>.</td></tr>
+<tr><td><code>[ ]</code></td><td>A character class - matches one of the
+characters</td><td><code>c[uoa]t</code> matches <code>cut</code>,
+<code>cot</code> or <code>cat</code>.</td></tr>
+<tr><td><code>!</code></td><td>Not</td><td>Negates a match - that is,
+ensures that it does not match.</td></tr>
+
+</table>
+
+</section>
+
+<section id="InternalBackRefs"><title>Regex Back-Reference Availability</title>
+
+      <p>One important thing here has to be remembered: Whenever you
+      use parentheses in <em>Pattern</em> or in one of the
+      <em>CondPattern</em>, back-references are internally created
+      which can be used with the strings <code>$N</code> and
+      <code>%N</code> (see below). These are available for creating
+      the strings <em>Substitution</em> and <em>TestString</em>.
+      Figure 2 shows to which locations the back-references are
+      transferred for expansion.</p>
+
+<p class="figure">
+      <img src="../images/mod_rewrite_fig2.gif" width="381"
+           height="179" alt="[Needs graphics capability to display]" /><br />
+      <dfn>Figure 2:</dfn> The back-reference flow through a rule.
+</p>
+
+</section>
+</section>
+
+<section id="rewriterule"><title>RewriteRule basics</title>
+<p>
+Basic anatomy of a RewriteRule, with exhaustively annotated simple
+examples.
+</p>
+</section>
+
+<section id="flags"><title>Rewrite Flags</title>
+<p>Discussion of the flags to RewriteRule, and when and why one might
+use them.</p>
+</section>
+
+<section id="rewritecond"><title>Rewrite conditions</title>
+<p>Discussion of RewriteCond, looping, and other related concepts.
+</p>
+</section>
+
+<section id="rewritemap"><title>Rewrite maps</title>
+<p>Discussion of RewriteMap, including simple, but heavily annotated,
+examples.</p>
+</section>
+
+<section id="htaccess"><title>.htaccess files</title>
+<p>Discussion of the differences between rewrite rules in httpd.conf and
+in .htaccess files.</p>
+</section>
+
+<section id="EnvVar"><title>Environment Variables</title>
+
+<p>This module keeps track of two additional (non-standard)
+CGI/SSI environment variables named <code>SCRIPT_URL</code>
+and <code>SCRIPT_URI</code>. These contain the
+<em>logical</em> Web-view to the current resource, while the
+standard CGI/SSI variables <code>SCRIPT_NAME</code> and
+<code>SCRIPT_FILENAME</code> contain the <em>physical</em>
+System-view. </p>
+
+<p>Notice: These variables hold the URI/URL <em>as they were
+initially requested</em>, <em>i.e.</em>, <em>before</em> any
+rewriting. This is important because the rewriting process is
+primarily used to rewrite logical URLs to physical
+pathnames.</p>
+
+<example><title>Example</title>
+<pre>
+SCRIPT_NAME=/sw/lib/w3s/tree/global/u/rse/.www/index.html
+SCRIPT_FILENAME=/u/rse/.www/index.html
+SCRIPT_URL=/u/rse/
+SCRIPT_URI=http://en1.engelschall.com/u/rse/
+</pre>
+</example>
+
+</section>
+
+</manualpage>
+
