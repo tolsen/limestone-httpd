@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 425051 $ -->
+<!-- $LastChangedRevision: 475699 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -3069,7 +3069,7 @@ server</description>
 certain events before failing a request</description>
 <syntax>TimeOut <var>seconds</var></syntax>
 <default>TimeOut 300</default>
-<contextlist><context>server config</context></contextlist>
+<contextlist><context>server config</context><context>virtual host</context></contextlist>
 
 <usage>
     <p>The <directive>TimeOut</directive> directive currently defines
@@ -3255,7 +3255,7 @@ hostname or IP address</description>
       <li>The IP address of the virtual host;</li>
 
       <li>A fully qualified domain name for the IP address of the
-      virtual host;</li>
+      virtual host (not recommended);</li>
 
       <li>The character <code>*</code>, which is used only in combination with
       <code>NameVirtualHost *</code> to match all IP addresses; or</li>

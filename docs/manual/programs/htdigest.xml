@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 487905 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -64,6 +64,11 @@
     <var>username</var> does not exist is this file, an entry is added. If it
     does exist, the password is changed.</dd>
     </dl>
+</section>
+
+<section id="security"><title>Security Considerations</title>
+    <p>This program is not safe as a setuid executable. Do <em>not</em> make it
+    setuid.</p>
 </section>
 
 </manualpage>

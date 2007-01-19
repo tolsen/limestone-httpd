@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 486656 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -83,6 +83,27 @@ later.</compatibility>
 
     <example><title>Example</title>
       DumpIOOutput On
+    </example>
+</usage>
+
+</directivesynopsis>
+
+<directivesynopsis>
+
+<name>DumpIOLogLevel</name>
+<description>Controls the logging level of the DumpIO output</description>
+<syntax>DumpIOLogLevel <var>level</var></syntax>
+<default>DumpIOLogLevel debug</default>
+<contextlist><context>server config</context></contextlist>
+<compatibility>DumpIOLogLevel is only available in Apache 2.2.4 and 
+later.</compatibility>
+
+<usage>
+    <p>Enable dumping of all output at a specific <directive
+    module="core">LogLevel</directive> level.</p>
+
+    <example><title>Example</title>
+      DumpIOLogLevel notice
     </example>
 </usage>
 

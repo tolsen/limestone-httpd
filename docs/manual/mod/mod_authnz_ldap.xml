@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 484638 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -799,6 +799,29 @@ group membership</description>
     <code>cn=Babs Jenson, o=Airius</code> as a member. If this
     directive is not set, then <module>mod_authnz_ldap</module> will
     check if the group has <code>bjenson</code> as a member.</p>
+</usage>
+</directivesynopsis>
+
+<directivesynopsis>
+<name>AuthLDAPRemoteUserAttribute</name>
+<description>Use the value of the attribute returned during the user
+query to set the REMOTE_USER environment variable</description>
+<syntax>AuthLDAPRemoteUserAttribute uid</syntax>
+<default>none</default>
+<contextlist><context>directory</context><context>.htaccess</context>
+</contextlist>
+<override>AuthConfig</override> 
+      
+<usage>
+    <p>If this directive is set, the value of the 
+    <code>REMOTE_USER</code> environment variable will be set to the
+    value of the attribute specified. Make sure that this attribute is
+    included in the list of attributes in the AuthLDAPUrl definition,
+    otherwise this directive will have no effect. This directive, if
+    present, takes precedence over AuthLDAPRemoteUserIsDN. This
+    directive is useful should you want people to log into a website
+    using an email address, but a backend application expects the
+    username as a userid.</p>
 </usage>
 </directivesynopsis>
 

@@ -1,5 +1,5 @@
 APACHE 2.2 STATUS:                                              -*-text-*-
-Last modified at [$Date: 2006-07-27 13:16:46 -0400 (Thu, 27 Jul 2006) $]
+Last modified at [$Date: 2007-01-06 01:29:51 -0500 (Sat, 06 Jan 2007) $]
 
 The current version of this file can be found at:
 
@@ -26,7 +26,8 @@ Release history:
     [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
           while x.{even}.z versions are Stable/GA releases.]
 
-    2.2.3   : Tagged on July 27, 2006
+    2.2.4   : Tagged on January 5, 2007
+    2.2.3   : Released on July 28, 2006 as GA.
     2.2.2   : Released on May 1, 2006 as GA.
     2.2.1   : Tagged on April 1, 2006, not released.
     2.2.0   : Released on December 1, 2005 as GA.
@@ -79,35 +80,120 @@ PATCHES ACCEPTED TO BACKPORT FROM TRUNK:
 
 PATCHES PROPOSED TO BACKPORT FROM TRUNK:
 
+    * mpm_winnt: Fix return values from wait_for_many_objects.
+      Note - this is required to avoid hangups of socket #64, #128
+      as Microsoft set aside 64 reserved values.
+      Trunk version of patch:
+        http://svn.apache.org/viewvc?view=rev&revision=428029
+      2.2.x version of patch:
+        Trunk version works
+        http://people.apache.org/~wrowe/mpm_winnt_waits.patch
+        is easier to read (-U8)
+      +1: mturk
+      wrowe notes: a patch should have the necessary effect with the
+        minimum lines of code - there's alot of redecorating that's
+        going on in this patch to no net effect.  The WAIT_TIMEOUT
+        result value seems to be ignored in the revised code?
+
     * Bundled PCRE: backport r381783 from trunk
       Fix brokenness on certain platforms when building with -DDEBUG.
       http://svn.apache.org/viewvc?view=rev&revision=381783
-      +1 sctemme, fielding
+      +1 sctemme, fielding, pquerna, jerenkrantz
       -1 niq: Why are we hacking a third-party package as bundled,
               rather than upstream?  This has potential for chaos
               for modules (and we have a history of PCRE trouble)
               as well as a maintenance nightmare!
+      jerenkrantz: I don't believe that's a valid reason to block this.
+                   We're bundling PCRE for the duration of the 2.2.x series,
+                   but we can re-evaluate for future major/minor revs.
+      wrowe: nak niq, ack je; this is a silly debate, fix, push fixes upstream
+             and adopt a newer PCRE at trunk/.
 
-    * mod_isapi: Simply backport the host of fixes for compilation on unix,
-      PR#'s 15993 29098 30022 16637 30033 28089
-      by pushing to trunk/ rev 416293 of modules/arch/win32/mod_isapi.[ch]
-      which compiles without changes.  Source + Binary posted at
-        http://people.apache.org/~wrowe/mod_isapi-416293.zip
-      and delta posted at
-        http://people.apache.org/~wrowe/mod_isapi-416293-to-httpd-2.2.patch
-      +1 wrowe , fielding
+    * PKCS#7: backport PCKS#7 patches from trunk.
+      +1 ben
+      jerenkrantz: What's the revision number to backport?
+      wrowe asks: ditto jerenkrantz
 
-    * mod_deflate: don't choke on flush buckets in INFLATE filter
-      PR#39854
-      http://svn.apache.org/viewvc?rev=416165&view=rev
-      +0: niq
-          (this patch is now superseded by rpluem/wrowe better patch)
-      -0: wrowe - on quick glance the line 1091 change looks incomplete,
-          and I'm not convinced that we should ignore flush.  Has anyone
-          inquired of the proper mechanism or composed the appropriate
-          patch to finish an incomplete packet and resume encoding or
-          this entirely impossible in the current scheme of things?
-      rpluem: I discussed this with Justin at the ApacheCon and we discussed
-              ways how to fix this and take care about the flush buckets.
-              I am willing to propose patches, but due to personal time
-              constraints they will not show up before the second half of July.
+    * mod_proxy: Support variable interpolation in reverse proxy configuration
+      http://svn.apache.org/viewvc?view=rev&revision=421686  (code)
+      http://svn.apache.org/viewvc?view=rev&revision=422178  (code)
+      http://svn.apache.org/viewvc/httpd/httpd/trunk/docs/manual/mod/mod_proxy.xml?r1=420990&r2=421725 (docs)
+      +1: niq, mturk
+      -.9: wrowe notes; modifying the existing syntax seems inappropriate, new
+           ProxyPassSubstitute or similarly named directives would seem to
+           make more sense, permit direct Reverse'als when appropriate and
+           restrict the Substitutions to be parsed only when required.
+
+   * mod_authn_dbd: Export any additional columns queried in the SQL select
+     into the environment with the name AUTHENTICATE_<COLUMN>. This brings
+     mod_authn_dbd behaviour in line with mod_authnz_ldap.
+     Trunk: http://svn.apache.org/viewvc?view=rev&revision=466865
+     +1: minfrin
+     niq: This wants a little tidying.  Use of 13 as a magic number (for a
+          strlen of something defined elsewhere) is nasty.  More importantly
+          you need to document how it affects the module's directives.
+          I'll +1 it when that's done.
+     wrowe: ditto's - good concept.
+
+   * core: Allow AcceptMutex to accept pathname arguments ala SSLMutex,
+     and, as a result, semi-depreciate Lockfile.
+     Trunk version of patch:
+       http://svn.apache.org/viewvc?view=rev&revision=467326
+       http://svn.apache.org/viewvc?view=rev&revision=468049
+     2.2.x version of patch:
+       Trunk version works (requires handling of CHANGES and ap_mmn.h
+       conflict though)
+     +1: jim, wrowe
+     wrowe notes: Adding to ease migration to 2.4 - good.  Deprecating 
+                  any directive in a .even released branch, bad.
+     jim notes: it's more an enhancement to AcceptMutex than a
+                depreciation of LockFile... no regressions are
+                introduced.
+     wrowe adds: Isn't it time for SSL/FTP/JK/FTP who all need the very
+                 same syntax to benefit from one generic implementation
+                 (in httpd, not apr, since it's config syntax specific).
+
+   * mod_proxy_balancer: Remove unnecessary lock/unlock for
+     the post_request hook. We are actually doing nothing here.
+     But keep the code (but macroed out) for future usage.
+     Trunk version of patch:
+       http://svn.apache.org/viewvc?view=rev&revision=484789
+       http://svn.apache.org/viewvc?view=rev&revision=484794
+     2.2.x version of patch:
+       Trunk version works.
+     +1: jim
+     +0: rpluem: Shouldn't we remove this code on 2.2.x? Keeping seems to be ok
+         for me on trunk, but on a stable branch?
+         jim says: the reason why we keep it is in case we
+         ever start using it. So we keep the framework in
+         that case. Make trunk backports easier.
+
+   * mod_cache: Correctly cache objects whose URL query string has been
+     modified by mod_rewrite.
+        PR: 40805
+     Trunk version of patch:
+       http://svn.apache.org/viewvc?view=rev&revision=476625
+     2.2.x version of patch:
+       Trunk version works
+     +1: rpluem
+
+   * mod_cache: While serving a cached entity ensure that filters that have
+     been applied to this cached entity before saving it to the cache are not
+     applied again.
+        PR: 40090
+     Trunk version of patch:
+       http://svn.apache.org/viewvc?rev=425787&view=rev
+     2.2.x version of patch:
+       Trunk version works
+     +1: rpluem
+
+   * mod_alias: Accept path components (URL part) in Redirects
+       PR: 35314
+     http://svn.apache.org/viewvc?rev=490142&view=rev
+     +1: niq
+
+   * mod_headers: Allow % at the end of a Header value
+       PR: 36609
+     http://svn.apache.org/viewvc?rev=490156&view=rev
+     +1: niq
+

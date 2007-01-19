@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 453081 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -293,8 +293,8 @@ person in</title>
     <example>
       AuthType Basic<br />
       AuthName "By Invitation Only"<br />
-      # Optional line:
-      AuthBasicProvider file
+      # Optional line:<br />
+      AuthBasicProvider file<br />
       AuthUserFile /usr/local/apache/passwd/passwords<br />
       AuthGroupFile /usr/local/apache/passwd/groups<br />
       Require group GroupName
