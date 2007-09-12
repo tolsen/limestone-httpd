@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 561886 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -250,6 +250,17 @@ LogFormat "%V %h %l %u %t \"%r\" %s %b" vcommon<br />
 </indent>
 &lt;/VirtualHost&gt;
 </example>
+
+<note>
+	<title>Note</title>
+	<p>If the first VirtualHost block does <em>not</em> include a
+	<directive module="core">ServerName</directive> directive, the reverse
+	DNS of the relevant IP will be used instead. 
+	If this is not the server name you
+	wish to use, a bogus entry (<code>ServerName
+	none.example.com</code>) can be added to get around this
+	behaviour.</p>
+</note>	
 
 </section>
 

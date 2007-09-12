@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 475699 $ -->
+<!-- $LastChangedRevision: 569020 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -1917,7 +1917,7 @@ URLs</description>
 
     <p>The URL may use wildcards. In a wild-card string, <code>?</code> matches
     any single character, and <code>*</code> matches any sequences of
-    characters.</p>
+    characters. Neither wildcard character matches a / in the URL-path.</p>
 
     <p><glossary ref="regex">Regular expressions</glossary>
     can also be used, with the addition of the
@@ -2273,6 +2273,9 @@ directory</description>
       <p>Note also, that this option <strong>gets ignored</strong> if set
       inside a <directive type="section" module="core">Location</directive>
       section.</p>
+      <p>Omitting this option should not be considered a security restriction,
+      since symlink testing is subject to race conditions that make it
+      circumventable.</p>
       </note></dd>
 
       <dt><code>Includes</code></dt>
@@ -2313,9 +2316,12 @@ directory</description>
       target file or directory is owned by the same user id as the
       link.
 
-      <note><title>Note</title> This option gets ignored if
+      <note><title>Note</title> <p>This option gets ignored if
       set inside a <directive module="core"
-      type="section">Location</directive> section.</note>
+      type="section">Location</directive> section.</p>
+      <p>This option should not be considered a security restriction,
+      since symlink testing is subject to race conditions that make it
+      circumventable.</p></note>
       </dd>
     </dl>
 
@@ -2330,6 +2336,12 @@ directory</description>
     options currently in force, and any options preceded by a
     <code>-</code> are removed from the options currently in
     force. </p>
+
+    <note type="warning"><title>Warning</title>
+    <p>Mixing <directive>Options</directive> with a <code>+</code> or
+    <code>-</code> with those without is not valid syntax, and is likely
+    to cause unexpected results.</p>
+    </note>
 
     <p>For example, without any <code>+</code> and <code>-</code> symbols:</p>
 
@@ -2619,6 +2631,7 @@ later</compatibility>
 
     <example>
       Require valid-user<br />
+      Order allow,deny<br />
       Allow from 192.168.1<br />
       Satisfy Any
     </example>
@@ -2670,6 +2683,12 @@ later</compatibility>
     <code>Shell\Open\Command</code> is used to open the script file. If the
     registry keys cannot be found, Apache falls back to the behavior of the
     <code>Script</code> option.</p>
+
+    <p>For example, the registry setting to have a script with the .pl extension
+    processed via perl would be:</p>
+
+    <example><code>HKEY_CLASSES_ROOT\.pl\Shell\ExecCGI\Command\(Default) => C:\Perl\bin\perl.exe -wT</code></example>
+
 
     <note type="warning"><title>Security</title>
     <p>Be careful when using <code>ScriptInterpreterSource
@@ -2735,7 +2754,8 @@ to name-virtual hosts</description>
 <usage>
     <p>The <directive>ServerAlias</directive> directive sets the
     alternate names for a host, for use with <a
-    href="../vhosts/name-based.html">name-based virtual hosts</a>.</p>
+	    href="../vhosts/name-based.html">name-based virtual hosts</a>. The
+    <directive>ServerAlias</directive> may include wildcards, if appropriate.</p>
 
     <example>
       &lt;VirtualHost *&gt;<br />

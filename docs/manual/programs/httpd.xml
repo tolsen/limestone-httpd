@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 561800 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -105,8 +105,11 @@ files.</dd>
 
 <dd>Sets a configuration <var>parameter </var>which can be used with
 <directive type="section" module="core">IfDefine</directive> sections
-in the configuration files to conditionally skip or process
-commands at server startup and restart.</dd>
+in the configuration files to conditionally skip or process commands
+at server startup and restart. Also can be used to set certain
+less-common startup parameters including <code>-DNO_DETACH</code>
+(prevent the parent from forking) and <code>-DFOREGROUND</code>
+(prevent the parent from calling <code>setsid()</code> et al).</dd>
 
 <dt><code>-e <var>level</var></code></dt>
 
