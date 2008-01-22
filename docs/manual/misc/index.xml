@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 574089 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -70,6 +70,13 @@
       <dd>
         <p>This document acts as a reference page for most of the relevant
         standards that Apache follows.</p>
+      </dd>
+
+      <dt><a href="password_encryptions.html">Password Encryption Formats</a></dt>
+
+      <dd>
+        <p>Discussion of the various ciphers supported by Apache for
+        authentication purposes.</p>
       </dd>
     </dl>
 

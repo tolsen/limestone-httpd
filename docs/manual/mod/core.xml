@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 569020 $ -->
+<!-- $LastChangedRevision: 608059 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -50,7 +50,7 @@ available</description>
     </example>
     
     <p>The <code>httpready</code> accept filter buffers entire HTTP requests at
-       the kernel level.  Once an entire request is recieved, the kernel then 
+       the kernel level.  Once an entire request is received, the kernel then 
        sends it to the server. See the 
        <a href="http://www.freebsd.org/cgi/man.cgi?query=accf_http&amp;sektion=9">
        accf_http(9)</a> man page for more details.  Since HTTPS requests are 
@@ -73,7 +73,7 @@ available</description>
     <p>Using <code>none</code> for an argument will disable any accept filters 
        for that protocol.  This is useful for protocols that require a server
        send data first, such as <code>nntp</code>:</p>
-    <example>AcceptFilter nttp none</example>
+    <example>AcceptFilter nntp none</example>
 
 </usage>
 </directivesynopsis>
@@ -294,7 +294,6 @@ content-type is <code>text/plain</code> or <code>text/html</code></description>
       <directive module="core">ForceType</directive>. Setting the
       content type within a (non-nph) CGI script is also safe.</p>
 
-      <p>The by-type output filters are never applied on proxy requests.</p>
     </note>
 </usage>
 
@@ -597,7 +596,7 @@ headers</description>
 <name>DefaultType</name>
 <description>MIME content-type that will be sent if the
 server cannot determine a type in any other way</description>
-<syntax>DefaultType <var>MIME-type</var></syntax>
+<syntax>DefaultType <var>MIME-type|none</var></syntax>
 <default>DefaultType text/plain</default>
 <contextlist><context>server config</context><context>virtual host</context>
 <context>directory</context><context>.htaccess</context>
@@ -609,8 +608,9 @@ server cannot determine a type in any other way</description>
     document whose type cannot be determined by its <glossary
     ref="mime-type">MIME types</glossary> mappings.</p>
 
-    <p>The server must inform the client of the content-type of the
-    document, so in the event of an unknown type it uses the
+    <p>The server SHOULD inform the client of the content-type of the
+    document.  If the server is unable to determine this by normal
+    means, it will set it to the configured
     <code>DefaultType</code>. For example:</p>
 
     <example>
@@ -619,6 +619,15 @@ server cannot determine a type in any other way</description>
 
     <p>would be appropriate for a directory which contained many GIF
     images with filenames missing the <code>.gif</code> extension.</p>
+
+    <p>In cases where it can neither be determined by the server nor
+    the administrator (e.g. a proxy), it is preferable to omit the MIME
+    type altogether rather than provide information that may be false.
+    This can be accomplished using</p>
+    <example>
+      DefaultType None
+    </example>
+    <p>DefaultType None is only available in httpd-2.2.7 and later.</p>
 
     <p>Note that unlike <directive
     module="core">ForceType</directive>, this directive only
@@ -1154,6 +1163,14 @@ HTTP response header</description>
     the setting for that subdirectory (which will be inherited by
     any sub-subdirectories that don't override it) will be equivalent to
     <code>FileETag&nbsp;MTime&nbsp;Size</code>.</p>
+    <note type="warning"><title>Warning</title>
+    Do not change the default for directories or locations that have WebDAV
+    enabled and use <module>mod_dav_fs</module> as a storage provider.
+    <module>mod_dav_fs</module> uses <code>INode&nbsp;MTime&nbsp;Size</code>
+    as a fixed format for <code>ETag</code> comparisons on conditional requests.
+    These conditional requests will break if the <code>ETag</code> format is
+    changed via <directive>FileETag</directive>.
+    </note>
 </usage>
 </directivesynopsis>
 
@@ -3347,6 +3364,12 @@ hostname or IP address</description>
     statement of the main server. You may also specify <code>:*</code>
     to match all ports on that address. (This is recommended when used
     with <code>_default_</code>.)</p>
+
+    <p>A <directive module="core">ServerName</directive> should be
+    specified inside each <directive
+    type="section">VirtualHost</directive> block. If it is absent, the
+    <directive module="core">ServerName</directive> from the "main"
+    server configuration will be inherited.</p>
 
     <note type="warning"><title>Security</title>
     <p>See the <a href="../misc/security_tips.html">security tips</a>

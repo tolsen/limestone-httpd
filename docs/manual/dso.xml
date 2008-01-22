@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE manualpage SYSTEM "./style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="./style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 587443 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -85,7 +85,7 @@
 
 <section id="usage"><title>Usage Summary</title>
 
-    <p>To give you an overview of the DSO features of Apache 2.0,
+    <p>To give you an overview of the DSO features of Apache 2.x,
     here is a short and concise summary:</p>
 
     <ol>

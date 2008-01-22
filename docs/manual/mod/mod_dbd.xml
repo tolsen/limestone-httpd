@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 569109 $ -->
+<!-- $LastChangedRevision: 574089 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -37,6 +37,8 @@
     managing databases with optimal efficiency and scalability
     for both threaded and non-threaded MPMs.</p>
 </summary>
+
+<seealso><a href="../misc/password_encryptions.html">Password Formats</a></seealso>
 
 <section id="pooling"><title>Connection Pooling</title>
     <p>This module manages database connections, in a manner

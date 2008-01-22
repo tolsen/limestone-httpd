@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="EUC-KR" ?>
 <!DOCTYPE manualpage SYSTEM "./style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="./style/manual.ko.xsl"?>
-<!-- English Revision: 105989:421100 (outdated) -->
+<!-- English Revision: 105989:587443 (outdated) -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -79,7 +79,7 @@
 
 <section id="usage"><title>사용법 요약</title>
 
-    <p>Apache 2.0의 DSO 기능에 대한 짧고 간략한 요약이다:</p>
+    <p>Apache 2.2의 DSO 기능에 대한 짧고 간략한 요약이다:</p>
 
     <ol>
       <li>

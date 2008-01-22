@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 558380 $ -->
+<!-- $LastChangedRevision: 582400 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -349,11 +349,11 @@ person in</title>
     problems, you may wish to store your passwords somewhere else, such
     as in a database.</p>
 
-    <p><module>mod_authn_dbm</module> and <module>mod_authn_dbd</module>
-    are two modules which make this possible. Rather than selecting
-    <directive module="mod_auth_basic">AuthBasicSource</directive> file,
-    instead you can choose <code>dbm</code> or <code>dbd</code> as your
-    storage format.</p>
+    <p><module>mod_authn_dbm</module> and <module>mod_authn_dbd</module> are two
+    modules which make this possible. Rather than selecting <code><directive
+    module="mod_auth_basic">AuthBasicProvider</directive> file</code>, instead
+    you can choose <code>dbm</code> or <code>dbd</code> as your storage
+    format.</p>
 
     <p>To select a dbd file rather than a text file, for example:</p>
 
@@ -377,7 +377,11 @@ person in</title>
     contain some more information about how this all works.
     <module>mod_authn_alias</module> can also help in simplifying certain
     authentication configurations.</p>
-
+    
+    <p>The various ciphers supported by Apache for authentication data are
+    explained in <a href="../misc/password_encryptions.html">Password
+    Encryptions</a>.</p>
+    
     <p>And you may want to look at the <a href="access.html">Access
     Control</a> howto, which discusses a number of related topics.</p>
 
