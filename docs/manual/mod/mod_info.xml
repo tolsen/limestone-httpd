@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 655823 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -43,7 +43,7 @@ configuration</description>
 
     <p>You may wish to use <module>mod_access</module> inside the
     <directive type="section" module="core">Location</directive>
-    directive to limite access to your server configuration
+    directive to limit access to your server configuration
     information:</p>
 
     <example>

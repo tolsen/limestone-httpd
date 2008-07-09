@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.de.xsl"?>
-<!-- English Revision: 167959:608059 (outdated) -->
+<!-- English Revision: 167959:662725 (outdated) -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -518,7 +518,7 @@ HTTP-Response-Headern</description>
 
 <usage>
     <p>Die Direktive aktiviert die Generierung von
-    <code>Content-MD5</code>-Headern, wie sie in RFC1864 bzw. RFC2068
+    <code>Content-MD5</code>-Headern, wie sie in RFC1864 bzw. RFC2616
     definiert sind.</p>
 
     <p>MD5 ist ein Algorithmus zur Berechnung eines "Datenextrakts"

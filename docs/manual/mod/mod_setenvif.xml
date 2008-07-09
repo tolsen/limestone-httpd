@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 658547 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -168,7 +168,10 @@ respect to case</description>
 
       <li><code>Request_URI</code> - the resource requested on the HTTP
        request line -- generally the portion of the URL
-      following the scheme and host portion without the query string</li>
+      following the scheme and host portion without the query string. See
+      the <directive module="mod_rewrite">RewriteCond</directive>
+      directive of <module>mod_rewrite</module> for extra information on
+      how to match your query string.</li>
     </ul>
 </li>
 
@@ -215,7 +218,7 @@ of</p>
    SetEnvIf Request_URI "\.jpg$" object_is_image=jpg<br />
    SetEnvIf Request_URI "\.xbm$" object_is_image=xbm<br />
         :<br />
-   SetEnvIf Referer www\.mydomain\.com intra_site_referral<br />
+   SetEnvIf Referer www\.mydomain\.example\.com intra_site_referral<br />
         :<br />
    SetEnvIf object_is_image xbm XBIT_PROCESSING=1<br />
         :<br />
@@ -226,7 +229,7 @@ of</p>
     <code>object_is_image</code> if the request was for an image
     file, and the fourth sets <code>intra_site_referral</code> if
     the referring page was somewhere on the
-    <code>www.mydomain.com</code> Web site.</p>
+    <code>www.mydomain.example.com</code> Web site.</p>
 
     <p>The last example will set environment variable
     <code>HAVE_TS</code> if the request contains any headers that

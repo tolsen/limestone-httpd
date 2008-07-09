@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 636379 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -21,7 +21,7 @@
 -->
 
 <manualpage metafile="rewrite_tech.xml.meta">
-<parentdocument href="./index.html"/>
+<parentdocument href="./">Rewrite</parentdocument>
 
   <title>Apache mod_rewrite Technical Details</title>
 
@@ -33,10 +33,10 @@ and URL matching.</p>
 documentation</a></seealso>
 <seealso><a href="rewrite_intro.html">mod_rewrite
 introduction</a></seealso>
-<seealso><a href="rewrite_guide.html">Practical solutions to common
-problems</a></seealso>
-<seealso><a href="rewrite_guide_advanced.html">Practical solutions to
-advanced problems</a></seealso>
+<seealso><a href="rewrite_guide.html">Rewrite Guide - useful 
+examples</a></seealso>
+<seealso><a href="rewrite_guide_advanced.html">Advanced Rewrite Guide -
+advanced useful examples</a></seealso>
 
 <section id="Internal"><title>Internal Processing</title>
 

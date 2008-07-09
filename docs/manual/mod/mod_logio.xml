@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 630295 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -38,6 +38,11 @@
     will correctly reflect any changes made by encryption.</p>
 
     <p>This module requires <module>mod_log_config</module>.</p>
+
+    <note>When KeepAlive connections are used with SSL, the overhead of the SSL
+    handshake is reflected in the byte count of the first request on the
+    connection.  When per-directory SSL renegotiation occurs, the bytes are associated
+    with the request that triggered the renegotiation.</note>
 
 </summary>
 

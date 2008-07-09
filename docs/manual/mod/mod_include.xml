@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 600393 $ -->
+<!-- $LastChangedRevision: 619737 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -627,6 +627,11 @@
       <code>-DDEBUG_INCLUDE</code> compiler option. This inserts for every
       parsed expression tokenizer information, the parse tree and how it is
       evaluated into the output sent to the client.</p>
+    </note>
+
+    <note><title>Escaping slashes in regex strings</title>
+     <p>All slashes which are not intended to act as delimiters in your regex must
+     be escaped.  This is regardless of their meaning to the regex engine.</p>
     </note>
 </section>
 

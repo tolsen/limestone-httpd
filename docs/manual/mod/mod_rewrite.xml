@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 604470 $ -->
+<!-- $LastChangedRevision: 664027 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -55,6 +55,8 @@ URLs on the fly</description>
       <p>Further details, discussion, and examples, are provided in the
       <a href="../rewrite/">detailed mod_rewrite documentation</a>.</p>
 </summary>
+
+<seealso><a href="#rewriteflags">Rewrite Flags</a></seealso>
 
 <section id="quoting"><title>Quoting Special Characters</title>
 
@@ -1075,51 +1077,10 @@ RewriteRule  ^/$                 /homepage.std.html  [L]
       <code>%{QUERY_STRING}</code> variables respectively.</p>
 </note>
 
-
-
-      <p>Some hints on the syntax of <glossary ref="regex">regular 
-      expressions</glossary>:</p>
-
-<note><pre>
-<strong>Text:</strong>
-  <strong><code>.</code></strong>           Any single character
-  <strong><code>[</code></strong>chars<strong><code>]</code></strong>     Character class: Any character of the class ``chars''
-  <strong><code>[^</code></strong>chars<strong><code>]</code></strong>    Character class: Not a character of the class ``chars''
-  text1<strong><code>|</code></strong>text2 Alternative: text1 or text2
-
-<strong>Quantifiers:</strong>
-  <strong><code>?</code></strong>           0 or 1 occurrences of the preceding text
-  <strong><code>*</code></strong>           0 or N occurrences of the preceding text (N &gt; 0)
-  <strong><code>+</code></strong>           1 or N occurrences of the preceding text (N &gt; 1)
-
-<strong>Grouping:</strong>
-  <strong><code>(</code></strong>text<strong><code>)</code></strong>      Grouping of text
-              (used either to set the borders of an alternative as above, or
-              to make backreferences, where the <strong>N</strong>th group can 
-              be referred to on the RHS of a RewriteRule as <code>$</code><strong>N</strong>)
-
-<strong>Anchors:</strong>
-  <strong><code>^</code></strong>           Start-of-line anchor
-  <strong><code>$</code></strong>           End-of-line anchor
-
-<strong>Escaping:</strong>
-  <strong><code>\</code></strong>char       escape the given char
-              (for instance, to specify the chars "<code>.[]()</code>" <em>etc.</em>)
-</pre></note>
-
-      <p>For more information about regular expressions, have a look at the
-      perl regular expression manpage ("<a
-      href="http://perldoc.perl.org/perlre.html">perldoc
-      perlre</a>"). If you are interested in more detailed
-      information about regular expressions and their variants
-      (POSIX regex etc.) the following book is dedicated to this topic:</p>
-
-      <p class="indent">
-        <em>Mastering Regular Expressions, 2nd Edition</em><br />
-         Jeffrey E.F. Friedl<br />
-         O'Reilly &amp; Associates, Inc. 2002<br />
-         ISBN 0-596-00289-0<br />
-      </p>
+      <p>For some hints on <glossary ref="regex">regular
+      expressions</glossary>, see
+      the <a href="../rewrite/rewrite_intro.html#regex">mod_rewrite
+      Introduction</a>.</p>
 
       <p>In mod_rewrite, the NOT character	
        ('<code>!</code>') is also available as a possible pattern 
@@ -1247,11 +1208,11 @@ cannot use <code>$N</code> in the substitution string!
         Using the B flag, non-alphanumeric characters in backreferences
         will be escaped.  For example, consider the rule:</p>
         <pre><code> RewriteRule ^(.*)$ index.php?show=$1 </code></pre>
-        <p>This will map <code>/C++</code> to <code>index.php?show=C++</code>.
+        <p>This will map <code>/C++</code> to <code>index.php?show=/C++</code>.
         But it will also map <code>/C%2b%2b</code> to
-        <code>index.php?show=C++</code>, because the <code>%2b</code>
+        <code>index.php?show=/C++</code>, because the <code>%2b</code>
         has been unescaped.  With the B flag, it will instead map to
-        <code>index.php?show=>/C%2b%2b</code>.</p>
+        <code>index.php?show=/C%2b%2b</code>.</p>
         <p>This escaping is particularly necessary in a proxy situation,
         when the backend may break if presented with an unescaped URL.</p>
         </dd>

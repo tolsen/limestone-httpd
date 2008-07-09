@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 602457 $ -->
+<!-- $LastChangedRevision: 655005 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -35,6 +35,7 @@
 
      <p><code><strong>rotatelogs</strong>
      [ -<strong>l</strong> ]
+     [ -<strong>f</strong> ]
      <var>logfile</var>
      <var>rotationtime</var>|<var>filesize</var>M 
      [ <var>offset</var> ]</code></p>
@@ -50,6 +51,16 @@ interval or for <code>strftime(3)</code> formatting with size-based
 rotation.  Note that using <code>-l</code> in an environment which
 changes the GMT offset (such as for BST or DST) can lead to unpredictable
 results!</dd>
+
+<dt><code>-f</code></dt>
+<dd>Causes the logfile to be opened immediately, as soon as
+<code>rotatelogs</code> starts, instead of waiting for the
+first logfile entry to be read (for non-busy sites, there may be
+a substantial delay between when the server is started
+and when the first request is handled, meaning that the
+associated logfile does not "exist" until then, which
+causes problems from some automated logging tools).
+<em>Available in version 2.2.9 and later.</em></dd>
 
 <dt><code><var>logfile</var></code></dt>
 

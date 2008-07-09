@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE indexpage SYSTEM "./style/sitemap.dtd">
 <?xml-stylesheet type="text/xsl" href="./style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 636034 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -62,7 +62,7 @@ Documentation</title>
     <page href="server-wide.html">Server-Wide Configuration</page>
     <page href="ssl/">SSL/TLS Encryption</page>
     <page href="suexec.html">Suexec Execution for CGI</page>
-    <page href="misc/rewriteguide.html">URL Rewriting Guide</page>
+    <page href="rewrite/">URL Rewriting Guide</page>
     <page href="vhosts/">Virtual Hosts</page>
 </category>
 

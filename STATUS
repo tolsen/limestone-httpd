@@ -1,5 +1,5 @@
 APACHE 2.2 STATUS:                                              -*-text-*-
-Last modified at [$Date: 2008-01-10 11:38:52 -0500 (Thu, 10 Jan 2008) $]
+Last modified at [$Date: 2008-06-10 14:49:19 -0400 (Tue, 10 Jun 2008) $]
 
 The current version of this file can be found at:
 
@@ -26,7 +26,8 @@ Release history:
     [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
           while x.{even}.z versions are Stable/GA releases.]
 
-    2.2.8   : Tagged January 10, 2008.
+    2.2.9   : Tagged June 10, 2008.
+    2.2.8   : Released January 19, 2008.
     2.2.7   : Tagged January 4, 2008. Not released.
     2.2.6   : Released September 7, 2007.
     2.2.5   : Tagged August 10, 2007, not released.
@@ -77,44 +78,24 @@ CURRENT RELEASE NOTES:
 
 RELEASE SHOWSTOPPERS:
 
+  None
+
 PATCHES ACCEPTED TO BACKPORT FROM TRUNK:
   [ start all new proposals below, under PATCHES PROPOSED. ]
-
 
 PATCHES PROPOSED TO BACKPORT FROM TRUNK:
   [ New proposals should be added at the end of the list ]
 
-   * mod_proxy: Support variable interpolation in reverse proxy configuration
-     (revised proposal dealing with wrowe's concerns).
-     trunk:
-       http://svn.apache.org/viewvc?view=rev&revision=421686  (code)
-       http://svn.apache.org/viewvc?view=rev&revision=422178  (code)
-       http://svn.apache.org/viewvc/httpd/httpd/trunk/docs/manual/mod/mod_proxy.xml?r1=420990&r2=421725 (docs)
-       http://svn.apache.org/viewvc?view=rev&revision=589371  (code+docs)
-     2.2.x:
-       http://people.apache.org/~niq/proxy-interp.patch
-     rpluem says: Please add the documentation to your 2.2.x version of your
-                  patch and a minor bump (changes to public mod_proxy.h) and
-                  assume you are +1 to your own proposal.
-     niq says: I'll attend to that.  As regards vote, I'm +1 on the proposal,
-               but -0 on including this as a new feature in 2.2.7.
-               Better IMHO to separate releasing it from the many bugfixes
-               in 2.2.7 mod_proxy.  Hence +1 for 2.2.8.
-
-   * configure / install: Make https port configurable.
-      Trunk version of patch:
-         http://svn.apache.org/viewvc?rev=606316&view=rev
-         http://svn.apache.org/viewvc?rev=606806&view=rev
-      Backport version for 2.2.x of patch:
-         http://people.apache.org/~fuankg/diffs/sslport.diff
-      +1: fuankg, wrowe
-      wrowe notes; Win32 is already ready for this, and there's no rush
-      to push this into the immediate next-release.
-
    * mod_ssl: Add server name indication (RFC 4366) support (PR 34607).
-      Trunk version of patch:
+      Trunk version of patches:
          http://svn.apache.org/viewvc?view=rev&revision=606190
-      Backport version for 2.2.x of patch:
+         http://svn.apache.org/viewvc?view=rev&revision=607420
+         http://svn.apache.org/viewvc?view=rev&revision=607425
+         http://svn.apache.org/viewvc?view=rev&revision=611216
+         http://svn.apache.org/viewvc/httpd/httpd/trunk/modules/ssl/ssl_engine_kernel.c?r1=611216&r2=630436
+         http://svn.apache.org/viewvc?view=rev&revision=662815
+
+      Backport version for 2.2.x of updated patch:
          http://people.apache.org/~fuankg/diffs/httpd-2.2.x-sni.diff
       +1: fuankg
       +0: like ssl upgrade of 2.2, perhaps this is a good reason to bring
@@ -122,15 +103,39 @@ PATCHES PROPOSED TO BACKPORT FROM TRUNK:
           third party module authors.
       -1: rpluem: jorton found some problems with the trunk version and they
                   should be fixed / discussed in trunk before we backport.
-      -1: wrowe until the next release is out the door
 
-  * various modules: Silence some compiler warnings
-      Trunk version of patch:
-         http://svn.apache.org/viewvc?rev=599651&view=rev
-         http://svn.apache.org/viewvc?rev=608508&view=rev
-      Backport version for 2.2.x of patch:
+ * Support chroot on unix-family platforms
+   PR 43596
+   http://svn.apache.org/viewvc?rev=611483&view=rev (source)
+   http://svn.apache.org/viewvc?rev=639005&view=rev (docs)
+   http://svn.apache.org/viewvc?rev=639010&view=rev (mmn)
+   +1: niq
+   rpluem says: I am missing a minor bump and documentation.
+   niq replies: Done.
+   rpluem says: Thanks. Sorry for being picky, but after revisiting the patch
+   again I ask myself how we can be sure that the chroot function is actually
+   present on the platform we compile.
+
+ * mod_rewrite: Allow Cookie option to set secure and HttpOnly flags.
+   PR 44799
+   Trunk version of patch:
+         http://svn.apache.org/viewvc?rev=647395&view=rev
+         http://svn.apache.org/viewvc?rev=660461&view=rev
+         http://svn.apache.org/viewvc?rev=660566&view=rev
+         http://svn.apache.org/viewvc?rev=664330&view=rev
+   Backport version for 2.2.x of patch:
          Trunk version of patch works
-      +1: rpluem,
+   +1: rpluem,
+   -1: niq - strcasecmp(NULL, ...) when secure is not set
+   rpluem: Good catch. Should be fixed by r660461.
+
+ * mod_proxy_http: Do not forward an Expect: 100-continue to
+   an HTTP/1.0 server
+   Trunk version of patch:
+         http://svn.apache.org/viewvc?view=rev&revision=661506
+   Backport version for 2.2.x of patch:
+         Trunk version of patch works
+   +1: jim
 
 PATCHES/ISSUES THAT ARE STALLED
 

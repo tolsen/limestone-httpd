@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
+<!-- GENERATED FROM XML: DO NOT EDIT -->
 
 <metafile>
   <basename>quickreference</basename>
@@ -6,11 +7,12 @@
   <relpath>..</relpath>
 
   <variants>
-    <variant>de</variant>
+    <variant outdated="yes">de</variant>
     <variant>en</variant>
-    <variant>es</variant>
-    <variant>ja</variant>
-    <variant>ko</variant>
-    <variant>ru</variant>
+    <variant outdated="yes">es</variant>
+    <variant outdated="yes">ja</variant>
+    <variant outdated="yes">ko</variant>
+    <variant outdated="yes">ru</variant>
+    <variant>tr</variant>
   </variants>
 </metafile>

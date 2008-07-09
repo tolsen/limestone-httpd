@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 608059 $ -->
+<!-- $LastChangedRevision: 662725 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -565,7 +565,7 @@ headers</description>
 <usage>
     <p>This directive enables the generation of
     <code>Content-MD5</code> headers as defined in RFC1864
-    respectively RFC2068.</p>
+    respectively RFC2616.</p>
 
     <p>MD5 is an algorithm for computing a "message digest"
     (sometimes called "fingerprint") of arbitrary-length data, with
@@ -842,8 +842,8 @@ from the web</description>
     <p>The <directive>DocumentRoot</directive> should be specified without
     a trailing slash.</p>
 </usage>
-<seealso><a href="../urlmapping.html">Mapping URLs to Filesystem
-Location</a></seealso>
+<seealso><a href="../urlmapping.html#documentroot">Mapping URLs to Filesystem
+Locations</a></seealso>
 </directivesynopsis>
 
 <directivesynopsis>
@@ -1394,13 +1394,28 @@ if a test is true at startup</description>
     multiple-parameter tests. Example:</p>
 
     <example>
-      httpd -DReverseProxy ...<br />
+      httpd -DReverseProxy -DUseCache -DMemCache ...<br />
       <br />
       # httpd.conf<br />
       &lt;IfDefine ReverseProxy&gt;<br />
       <indent>
-        LoadModule rewrite_module modules/mod_rewrite.so<br />
-        LoadModule proxy_module   modules/libproxy.so<br />
+        LoadModule proxy_module   modules/mod_proxy.so<br />
+        LoadModule proxy_http_module   modules/mod_proxy_http.so<br />
+        &lt;IfDefine UseCache&gt;<br />
+        <indent>
+          LoadModule cache_module   modules/mod_cache.so<br />
+          &lt;IfDefine MemCache&gt;<br />
+          <indent>
+            LoadModule mem_cache_module   modules/mod_mem_cache.so<br />
+          </indent>
+          &lt;/IfDefine&gt;<br />
+          &lt;IfDefine !MemCache&gt;<br />
+          <indent>
+            LoadModule disk_cache_module   modules/mod_disk_cache.so<br />
+          </indent>
+          &lt;/IfDefine&gt;
+        </indent>
+        &lt;/IfDefine&gt;
       </indent>
       &lt;/IfDefine&gt;
     </example>
@@ -1504,18 +1519,6 @@ the server configuration files</description>
       Include conf/ssl.conf<br />
       Include conf/vhosts/*.conf
     </example>
-
-    <p>Running <code>apachectl configtest</code> will give you a list
-    of the files that are being processed during the configuration
-    check:</p>
-
-    <example>
-      root@host# apachectl configtest<br />
-      Processing config file: /usr/local/apache2/conf/ssl.conf<br />
-      Processing config file: /usr/local/apache2/conf/vhosts/vhost1.conf<br />
-      Processing config file: /usr/local/apache2/conf/vhosts/vhost2.conf<br />
-      Syntax OK
-    </example>
 </usage>
 
 <seealso><program>apachectl</program></seealso>
@@ -1549,6 +1552,10 @@ the server configuration files</description>
     unless otherwise specified. If the client requests it, chunked
     encoding will be used in order to send content of unknown
     length over persistent connections.</p>
+
+    <p>When a client uses a Keep-Alive connection it will be counted
+    as a single "request" for the MaxRequestsPerChild directive, regardless
+    of how many requests are sent using the connection.</p>
 </usage>
 
 <seealso><directive module="core">MaxKeepAliveRequests</directive></seealso>
@@ -1573,6 +1580,11 @@ requests on a persistent connection</description>
     may cause performance problems in heavily loaded servers. The
     higher the timeout, the more server processes will be kept
     occupied waiting on connections with idle clients.</p>
+    
+    <p>In a name-based virtual host context, the value of the first
+    defined virtual host (the default host) in a set of <directive
+    module="core">NameVirtualHost</directive> will be used.
+    The other values will be ignored.</p>
 </usage>
 </directivesynopsis>
 
@@ -1792,8 +1804,8 @@ will be accepted from the client</description>
 <name>LimitRequestFieldSize</name>
 <description>Limits the size of the HTTP request header allowed from the
 client</description>
-<syntax>LimitRequestFieldsize <var>bytes</var></syntax>
-<default>LimitRequestFieldsize 8190</default>
+<syntax>LimitRequestFieldSize <var>bytes</var></syntax>
+<default>LimitRequestFieldSize 8190</default>
 <contextlist><context>server config</context></contextlist>
 
 <usage>
@@ -1954,7 +1966,7 @@ URLs</description>
     functionality is especially useful when combined with the
     <directive module="core">SetHandler</directive>
     directive. For example, to enable status requests, but allow them
-    only from browsers at <code>foo.com</code>, you might use:</p>
+    only from browsers at <code>example.com</code>, you might use:</p>
 
     <example>
       &lt;Location /status&gt;<br />
@@ -1962,7 +1974,7 @@ URLs</description>
         SetHandler server-status<br />
         Order Deny,Allow<br />
         Deny from all<br />
-        Allow from .foo.com<br />
+        Allow from .example.com<br />
       </indent>
       &lt;/Location&gt;
     </example>
@@ -3304,11 +3316,11 @@ hostname or IP address</description>
     <example><title>Example</title>
       &lt;VirtualHost 10.1.2.3&gt;<br />
       <indent>
-        ServerAdmin webmaster@host.foo.com<br />
-        DocumentRoot /www/docs/host.foo.com<br />
-        ServerName host.foo.com<br />
-        ErrorLog logs/host.foo.com-error_log<br />
-        TransferLog logs/host.foo.com-access_log<br />
+        ServerAdmin webmaster@host.example.com<br />
+        DocumentRoot /www/docs/host.example.com<br />
+        ServerName host.example.com<br />
+        ErrorLog logs/host.example.com-error_log<br />
+        TransferLog logs/host.example.com-access_log<br />
       </indent>
       &lt;/VirtualHost&gt;
     </example>

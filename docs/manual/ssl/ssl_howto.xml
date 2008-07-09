@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 655823 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -205,10 +205,14 @@ AuthName             "Snake Oil Authentication"
 AuthType             Basic
 AuthBasicProvider    file
 AuthUserFile         /usr/local/apache2/conf/httpd.passwd
-require              valid-user
+Require              valid-user
 &lt;/Directory&gt;</pre>
     </example>
-
+    
+    <p>The password used in this example is the DES encrypted string "password".
+    See the <directive module="mod_ssl">SSLOptions</directive> docs for more 
+    information.</p>
+    
     <example><title>httpd.passwd</title><pre>
 /C=DE/L=Munich/O=Snake Oil, Ltd./OU=Staff/CN=Foo:xxj31ZMTZzkVA
 /C=US/L=S.F./O=Snake Oil, Ltd./OU=CA/CN=Bar:xxj31ZMTZzkVA
@@ -243,7 +247,7 @@ Intranet website, for clients coming from the Internet? I still want to allow
 plain HTTP access for clients on the Intranet.</title>
    
    <p>These examples presume that clients on the Intranet have IPs in the range 
-   192.160.1.0/24, and that the part of the Intranet website you want to allow
+   192.168.1.0/24, and that the part of the Intranet website you want to allow
    internet access to is <code>/usr/local/apache2/htdocs/subarea</code>. 
    This configuration should remain outside of your HTTPS virtual host, so
    that it applies to both HTTPS and HTTP.</p>

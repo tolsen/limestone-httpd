@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 658547 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -94,6 +94,32 @@
     translated to the file path
     <code>/var/www/rbowen/docs/file.html</code></p>
 
+    <p>Multiple directories or directory paths can also be set.</p>
+
+    <example>
+      UserDir public_html /var/html
+    </example>
+
+    <p>For the URL <code>http://example.com/~rbowen/file.html</code>, 
+    Apache will search for <code>~rbowen</code>. If it isn't found, 
+    Apache will search for <code>rbowen</code> in <code>/var/html</code>. If
+    found, the above URL will then be translated to the file path 
+    <code>/var/html/rbowen/file.html</code></p>
+
+  </section>
+  
+  <section id="redirect">
+    <title>Redirecting to external URLs</title>
+    <p>The <directive module="mod_userdir">UserDir</directive> directive can be
+      used to redirect user directory requests to external URLs.</p>
+      
+    <example>
+      UserDir http://example.org/users/*/
+    </example>
+    
+    <p>The above example will redirect a request for
+    <code>http://example.com/~bob/abc.html</code> to
+    <code>http://example.org/users/bob/abc.html</code>.</p>
   </section>
 
   <section id="enable">

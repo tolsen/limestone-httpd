@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 608191 $ -->
+<!-- $LastChangedRevision: 664005 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -68,9 +68,10 @@
 <seealso><module>mod_proxy_balancer</module></seealso>
 <seealso><module>mod_ssl</module></seealso>
 
-    <section id="forwardreverse"><title>Forward and Reverse Proxies</title>
+    <section id="forwardreverse"><title>Forward Proxies and Reverse 
+       Proxies/Gateways</title>
       <p>Apache can be configured in both a <dfn>forward</dfn> and
-      <dfn>reverse</dfn> proxy mode.</p>
+      <dfn>reverse</dfn> proxy (also known as <dfn>gateway</dfn>) mode.</p>
 
       <p>An ordinary <dfn>forward proxy</dfn> is an intermediate
       server that sits between the client and the <em>origin
@@ -94,13 +95,13 @@
       authorized clients can access the proxy before activating a
       forward proxy.</p>
 
-      <p>A <dfn>reverse proxy</dfn>, by contrast, appears to the
-      client just like an ordinary web server.  No special
-      configuration on the client is necessary.  The client makes
-      ordinary requests for content in the name-space of the reverse
-      proxy.  The reverse proxy then decides where to send those
-      requests, and returns the content as if it was itself the
-      origin.</p>
+      <p>A <dfn>reverse proxy</dfn> (or <dfn>gateway</dfn>), by
+      contrast, appears to the client just like an ordinary web
+      server.  No special configuration on the client is necessary.
+      The client makes ordinary requests for content in the name-space
+      of the reverse proxy.  The reverse proxy then decides where to
+      send those requests, and returns the content as if it was itself
+      the origin.</p>
 
       <p>A typical usage of a reverse proxy is to provide Internet
       users access to a server that is behind a firewall.  Reverse
@@ -436,7 +437,8 @@ request</description>
     server. (Setting ProxyRequests to <code>Off</code> does not disable use of
     the <directive module="mod_proxy">ProxyPass</directive> directive.)</p>
 
-    <p>In a typical reverse proxy configuration, this option should be set to
+    <p>In a typical reverse proxy or gateway configuration, this
+    option should be set to
     <code>Off</code>.</p>
 
     <p>In order to get the functionality of proxying HTTP or FTP sites, you
@@ -450,6 +452,7 @@ request</description>
       both to your network and to the Internet at large.</p>
     </note>
 </usage>
+<seealso><a href="#forwardreverse">Forward and Reverse Proxies/Gateways</a></seealso>
 </directivesynopsis>
 
 <directivesynopsis>
@@ -476,9 +479,9 @@ request</description>
     this module.</p>
 
     <example><title>Example</title>
-      ProxyRemote http://goodguys.com/ http://mirrorguys.com:8000<br />
-      ProxyRemote * http://cleversite.com<br />
-      ProxyRemote ftp http://ftpproxy.mydomain.com:8080
+      ProxyRemote http://goodguys.example.com/ http://mirrorguys.example.com:8000<br />
+      ProxyRemote * http://cleverproxy.localdomain<br />
+      ProxyRemote ftp http://ftpproxy.mydomain:8080
     </example>
 
     <p>In the last example, the proxy will forward FTP requests, encapsulated
@@ -504,6 +507,23 @@ expressions</description>
     <directive module="mod_proxy">ProxyRemote</directive> directive, except the
     first argument is a <glossary ref="regex">regular expression</glossary>
     match against the requested URL.</p>
+</usage>
+</directivesynopsis>
+
+<directivesynopsis>
+<name>BalancerMember</name>
+<description>Add a member to a load balancing group</description>
+<syntax>BalancerMember <var>url</var> [<var
+                >key=value [key=value ...]]</var></syntax>
+<contextlist><context>directory</context>
+</contextlist>
+<compatibility>BalancerMember is only available in Apache 2.2
+        and later.</compatibility>
+<usage>
+    <p>This directive adds a member to a load balancing group. It must be used
+    within a <code>&lt;Proxy <var>balancer://</var>...&gt;</code> container
+    directive, and can take any of the parameters available to
+    <directive module="mod_proxy">ProxyPass</directive> directives.</p>
 </usage>
 </directivesynopsis>
 
@@ -564,18 +584,20 @@ expressions</description>
 <directivesynopsis>
 <name>ProxyPass</name>
 <description>Maps remote servers into the local server URL-space</description>
-<syntax>ProxyPass [<var>path</var>] !|<var>url</var> [<var>key=value</var> <var>key=value</var> ...]] [nocanon]</syntax>
+<syntax>ProxyPass [<var>path</var>] !|<var>url</var> [<var>key=value</var>
+<var>key=value</var> ...]] [nocanon] [interpolate]</syntax>
 <contextlist><context>server config</context><context>virtual host</context>
 <context>directory</context>
 </contextlist>
 
 <usage>
-    <p>This directive allows remote servers to be mapped into the space of
-    the local server; the local server does not act as a proxy in the
-    conventional sense, but appears to be a mirror of the remote
-    server. <var>path</var> is the name of a local virtual path; <var>url</var>
-    is a partial URL for the remote server and cannot include a query
-    string.</p>
+    <p>This directive allows remote servers to be mapped into the
+    space of the local server; the local server does not act as a
+    proxy in the conventional sense, but appears to be a mirror of the
+    remote server. The local server is often called a <dfn>reverse
+    proxy</dfn> or <dfn>gateway</dfn>. The <var>path</var> is the name of
+    a local virtual path; <var>url</var> is a partial URL for the
+    remote server and cannot include a query string.</p>
 
     <note type="warning">The <directive
     module="mod_proxy">ProxyRequests</directive> directive should
@@ -592,6 +614,14 @@ expressions</description>
     <p>will cause a local request for
     <code>http://example.com/mirror/foo/bar</code> to be internally converted
     into a proxy request to <code>http://backend.example.com/bar</code>.</p>
+
+    <note type="warning">
+    <p>If the first argument ends with a trailing <strong>/</strong>, the second
+       argument should also end with a trailing <strong>/</strong> and vice
+       versa. Otherwise the resulting requests to the backend may miss some
+       needed slashes and do not deliver the expected results.
+    </p>
+    </note>
 
     <p>The <code>!</code> directive is useful in situations where you don't want
     to reverse-proxy a subdirectory, <em>e.g.</em></p>
@@ -635,7 +665,7 @@ expressions</description>
         <th>Description</th></tr>
     <tr><td>min</td>
         <td>0</td>
-        <td>Minumum number of connections that will always
+        <td>Minimum number of connections that will always
             be open to the backend server.</td></tr>
     <tr><td>max</td>
         <td>1...n</td>
@@ -655,9 +685,20 @@ expressions</description>
     <tr><td>acquire</td>
         <td>-</td>
         <td>If set this will be the maximum time to wait for a free
-    connection in the connection pool. If there are no free connections
-    in the pool the Apache will return <code>SERVER_BUSY</code> status to
-    the client.
+    connection in the connection pool, in milliseconds. If there are no free
+    connections in the pool the Apache will return <code>SERVER_BUSY</code>
+    status to the client.
+    </td></tr>
+    <tr><td>disablereuse</td>
+        <td>Off</td>
+        <td>This parameter should be used when you want to force mod_proxy
+    to immediately close a connection to the backend after being used, and
+    thus, disable its persistent connection and pool for that backend.
+    This helps in various situations where a firewall between Apache and
+    the backend server (regardless of protocol) tends to silently
+    drop connections or when backends themselves may be under round-
+    robin DNS. To disable connection pooling reuse,
+    set this property value to <code>On</code>. 
     </td></tr>
     <tr><td>flushpackets</td>
         <td>off</td>
@@ -804,7 +845,7 @@ expressions</description>
     <p>A sample balancer setup</p>
     <example>
       ProxyPass /special-area http://special.example.com/ smax=5 max=10<br />
-      ProxyPass / balancer://mycluster stickysession=JSESSIONID|jsessionid nofailover=On<br />
+      ProxyPass / balancer://mycluster/ stickysession=JSESSIONID|jsessionid nofailover=On<br />
       &lt;Proxy balancer://mycluster&gt;<br />
       <indent>
         BalancerMember http://1.2.3.4:8009<br />
@@ -837,6 +878,15 @@ expressions</description>
     backend.  Note that may affect the security of your backend, as it
     removes the normal limited protection against URL-based attacks
     provided by the proxy.</p>
+
+    <p>The optional <var>interpolate</var> keyword (available in
+    httpd 2.2.9 and later), in combination with
+    <directive>ProxyPassInterpolateEnv</directive> causes the ProxyPass
+    to interpolate environment variables, using the syntax
+    <var>${VARNAME}</var>.  Note that many of the standard CGI-derived
+    environment variables will not exist when this interpolation happens,
+    so you may still have to resort to <module>mod_rewrite</module>
+    for complex rules.</p>
 
     <p>When used inside a <directive type="section" module="core"
     >Location</directive> section, the first argument is omitted and the local
@@ -886,17 +936,19 @@ expressions</description>
 <name>ProxyPassReverse</name>
 <description>Adjusts the URL in HTTP response headers sent from a reverse
 proxied server</description>
-<syntax>ProxyPassReverse [<var>path</var>] <var>url</var></syntax>
+<syntax>ProxyPassReverse [<var>path</var>] <var>url</var>
+[<var>interpolate</var>]</syntax>
 <contextlist><context>server config</context><context>virtual host</context>
 <context>directory</context>
 </contextlist>
 
 <usage>
     <p>This directive lets Apache adjust the URL in the <code>Location</code>,
-    <code>Content-Location</code> and <code>URI</code> headers on HTTP redirect
-    responses. This is essential when Apache is used as a reverse proxy to avoid
-    by-passing the reverse proxy because of HTTP redirects on the backend
-    servers which stay behind the reverse proxy.</p>
+    <code>Content-Location</code> and <code>URI</code> headers on HTTP
+    redirect responses. This is essential when Apache is used as a
+    reverse proxy (or gateway) to avoid by-passing the reverse proxy
+    because of HTTP redirects on the backend servers which stay behind
+    the reverse proxy.</p>
 
     <p>Only the HTTP response headers specifically mentioned above
     will be rewritten.  Apache will not rewrite other response
@@ -939,6 +991,12 @@ proxied server</description>
     because it doesn't depend on a corresponding <directive module="mod_proxy"
     >ProxyPass</directive> directive.</p>
 
+    <p>The optional <var>interpolate</var> keyword (available in
+    httpd 2.2.9 and later), used together with
+    <directive>ProxyPassInterpolateEnv</directive>, enables interpolation
+    of environment variables specified using the format <var>${VARNAME}</var>.
+    </p>
+
     <p>When used inside a <directive type="section" module="core"
     >Location</directive> section, the first argument is omitted and the local
     directory is obtained from the <directive type="section" module="core"
@@ -950,7 +1008,8 @@ proxied server</description>
 <name>ProxyPassReverseCookieDomain</name>
 <description>Adjusts the Domain string in Set-Cookie headers from a reverse-
 proxied server</description>
-<syntax>ProxyPassReverseCookieDomain <var>internal-domain</var> <var>public-domain</var></syntax>
+<syntax>ProxyPassReverseCookieDomain <var>internal-domain</var>
+<var>public-domain</var> [<var>interpolate</var>]</syntax>
 <contextlist><context>server config</context><context>virtual host</context>
 <context>directory</context>
 </contextlist>
@@ -965,7 +1024,8 @@ string in <code>Set-Cookie</code> headers.</p>
 <name>ProxyPassReverseCookiePath</name>
 <description>Adjusts the Path string in Set-Cookie headers from a reverse-
 proxied server</description>
-<syntax>ProxyPassReverseCookiePath <var>internal-path</var> <var>public-path</var></syntax>
+<syntax>ProxyPassReverseCookiePath <var>internal-path</var>
+<var>public-path</var> [<var>interpolate</var>]</syntax>
 <contextlist><context>server config</context><context>virtual host</context>
 <context>directory</context>
 </contextlist>
@@ -1001,23 +1061,6 @@ proxy</description>
     <p>Note that you'll need to have <module>mod_proxy_connect</module> present
     in the server in order to get the support for the <code>CONNECT</code> at
     all.</p>
-</usage>
-</directivesynopsis>
-<directivesynopsis>
-
-<name>BalancerMember</name>
-<description>Add a member to a load balancing group</description>
-<syntax>BalancerMember <var>url</var> [<var
-                >key=value [key=value ...]]</var></syntax>
-<contextlist><context>directory</context>
-</contextlist>
-<compatibility>BalancerMember is only available in Apache 2.2
-        and later.</compatibility>
-<usage>
-    <p>This directive adds a member to a load balancing group. It must be used
-    within a <code>&lt;Proxy <var>balancer://</var>...&gt;</code> container
-    directive, and can take any of the parameters available to
-    <directive module="mod_proxy">ProxyPass</directive> directives.</p>
 </usage>
 </directivesynopsis>
 
@@ -1146,8 +1189,8 @@ directly</description>
     <directive module="mod_proxy">ProxyRemote</directive> proxy server(s).</p>
 
     <example><title>Example</title>
-      ProxyRemote  *  http://firewall.mycompany.com:81<br />
-      NoProxy         .mycompany.com 192.168.112.0/21
+      ProxyRemote  *  http://firewall.example.com:81<br />
+      NoProxy         .example.com 192.168.112.0/21
     </example>
 
     <p>The <var>host</var> arguments to the <directive>NoProxy</directive>
@@ -1174,8 +1217,8 @@ directly</description>
     <note><title>Note</title>
       <p>Domain name comparisons are done without regard to the case, and
       <var>Domain</var>s are always assumed to be anchored in the root of the
-      DNS tree, therefore two domains <code>.MyDomain.com</code> and
-      <code>.mydomain.com.</code> (note the trailing period) are considered
+      DNS tree, therefore two domains <code>.ExAmple.com</code> and
+      <code>.example.com.</code> (note the trailing period) are considered
       equal. Since a domain comparison does not involve a DNS lookup, it is much
       more efficient than subnet comparison.</p>
     </note></dd>
@@ -1232,7 +1275,7 @@ directly</description>
     of hosts with different <var><a href="#ipaddr">IPAddr</a></var>s).</p>
 
     <example><title>Examples</title>
-      prep.ai.mit.edu<br />
+      prep.ai.example.com<br />
       www.apache.org
     </example>
 
@@ -1244,8 +1287,8 @@ directly</description>
       link.</p>
       <p><var>Hostname</var> comparisons are done without regard to the case,
       and <var>Hostname</var>s are always assumed to be anchored in the root
-      of the DNS tree, therefore two hosts <code>WWW.MyDomain.com</code>
-      and <code>www.mydomain.com.</code> (note the trailing period) are
+      of the DNS tree, therefore two hosts <code>WWW.ExAmple.com</code>
+      and <code>www.example.com.</code> (note the trailing period) are
       considered equal.</p>
      </note></dd>
     </dl>
@@ -1286,9 +1329,9 @@ directly</description>
     will be generated.</p>
 
     <example><title>Example</title>
-      ProxyRemote  *  http://firewall.mycompany.com:81<br />
-      NoProxy         .mycompany.com 192.168.112.0/21<br />
-      ProxyDomain     .mycompany.com
+      ProxyRemote  *  http://firewall.example.com:81<br />
+      NoProxy         .example.com 192.168.112.0/21<br />
+      ProxyDomain     .example.com
     </example>
 </usage>
 </directivesynopsis>
@@ -1348,6 +1391,36 @@ header for proxied requests</description>
 
     <p>This directive does not affect the processing of informational (1xx),
     normal success (2xx), or redirect (3xx) responses.</p>
+</usage>
+</directivesynopsis>
+
+<directivesynopsis>
+<name>ProxyPassInterpolateEnv</name>
+<description>Enable Environment Variable interpolation in Reverse Proxy configurations</description>
+<syntax>ProxyPassInterpolateEnv On|Off</syntax>
+<default>ProxyPassInterpolateEnv Off</default>
+<contextlist><context>server config</context>
+<context>virtual host</context>
+<context>directory</context>
+</contextlist>
+<compatibility>Available in httpd 2.2.9 and later</compatibility>
+
+<usage>
+    <p>This directive, together with the <var>interpolate</var> argument to
+    <directive>ProxyPass</directive>, <directive>ProxyPassReverse</directive>,
+    <directive>ProxyPassReverseCookieDomain</directive> and
+    <directive>ProxyPassReverseCookiePath</directive>
+    enables reverse proxies to be dynamically
+    configured using environment variables, which may be set by
+    another module such as <module>mod_rewrite</module>.
+    It affects the <directive>ProxyPass</directive>,
+    <directive>ProxyPassReverse</directive>,
+    <directive>ProxyPassReverseCookieDomain</directive>, and
+    <directive>ProxyPassReverseCookiePath</directive> directives,
+    and causes them to substitute the value of an environment
+    variable <code>varname</code> for the string <code>${varname}</code>
+    in configuration directives.</p>
+    <p>Keep this turned off (for server performance) unless you need it!</p>
 </usage>
 </directivesynopsis>
 

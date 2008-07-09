@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
+<!-- GENERATED FROM XML: DO NOT EDIT -->
 
 <metafile>
   <basename>index</basename>
@@ -12,5 +13,6 @@
     <variant>ja</variant>
     <variant outdated="yes">ko</variant>
     <variant>ru</variant>
+    <variant>tr</variant>
   </variants>
 </metafile>

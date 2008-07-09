@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 602508 $ -->
+<!-- $LastChangedRevision: 658547 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -72,7 +72,7 @@ performance</description>
 <section id="enable">
     <title>Enabling Status Support</title>
 
-    <p>To enable status reports only for browsers from the foo.com
+    <p>To enable status reports only for browsers from the example.com
     domain add this code to your <code>httpd.conf</code>
     configuration file</p>
 <example>
@@ -81,7 +81,7 @@ performance</description>
 <br />
     Order Deny,Allow<br />
     Deny from all<br />
-    Allow from .foo.com<br />
+    Allow from .example.com<br />
     &lt;/Location&gt;
 </example>
 
