@@ -1,0 +1,164 @@
+APACHE 2.2 STATUS:                                              -*-text-*-
+Last modified at [$Date: 2008-06-10 14:49:19 -0400 (Tue, 10 Jun 2008) $]
+
+The current version of this file can be found at:
+
+  * http://svn.apache.org/repos/asf/httpd/httpd/branches/2.2.x/STATUS
+
+Documentation status is maintained seperately and can be found at:
+
+  * docs/STATUS in this source tree, or
+  * http://svn.apache.org/repos/asf/httpd/httpd/trunk/docs/STATUS
+
+Consult the following STATUS files for information on related projects:
+
+  * http://svn.apache.org/repos/asf/apr/apr/trunk/STATUS
+  * http://svn.apache.org/repos/asf/apr/apr-util/trunk/STATUS
+
+Patches considered for backport are noted in their branches' STATUS:
+
+  * http://svn.apache.org/repos/asf/httpd/httpd/branches/1.3.x/STATUS
+  * http://svn.apache.org/repos/asf/httpd/httpd/branches/2.0.x/STATUS
+  * http://svn.apache.org/repos/asf/httpd/httpd/branches/2.2.x/STATUS
+
+
+Release history:
+    [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
+          while x.{even}.z versions are Stable/GA releases.]
+
+    2.2.9   : Tagged June 10, 2008.
+    2.2.8   : Released January 19, 2008.
+    2.2.7   : Tagged January 4, 2008. Not released.
+    2.2.6   : Released September 7, 2007.
+    2.2.5   : Tagged August 10, 2007, not released.
+    2.2.4   : Released on January 9, 2007 as GA.
+    2.2.3   : Released on July 28, 2006 as GA.
+    2.2.2   : Released on May 1, 2006 as GA.
+    2.2.1   : Tagged on April 1, 2006, not released.
+    2.2.0   : Released on December 1, 2005 as GA.
+    2.1.10  : Tagged on November 19, 2005, not released.
+    2.1.9   : Released on November 5, 2005 as beta.
+    2.1.8   : Released on October 1, 2005 as beta.
+    2.1.7   : Released on September 12, 2005 as beta.
+    2.1.6   : Released on June 27, 2005 as alpha.
+    2.1.5   : Tagged on June 17, 2005.
+    2.1.4   : not released.
+    2.1.3   : Released on  February 22, 2005 as alpha.
+    2.1.2   : Released on December 8, 2004 as alpha.
+    2.1.1   : Released on November 19, 2004 as alpha.
+    2.1.0   : not released.
+
+
+Contributors looking for a mission:
+
+  * Just do an egrep on "TODO" or "XXX" in the source.
+
+  * Review the bug database at: http://issues.apache.org/bugzilla/
+
+  * Review the "PatchAvailable" bugs in the bug database:
+
+    https://issues.apache.org/bugzilla/buglist.cgi?bug_status=NEW&bug_status=ASSIGNED&bug_status=REOPENED&product=Apache+httpd-2&keywords=PatchAvailable
+
+    After testing, you can append a comment saying "Reviewed and tested".
+
+  * Open bugs in the bug database.
+
+
+CURRENT RELEASE NOTES:
+
+  * Forward binary compatibility is expected of Apache 2.2.x releases, such
+    that no MMN major number changes will occur.  Such changes can only be
+    made in the trunk.
+
+  * All commits to branches/2.2.x must be reflected in SVN trunk,
+    as well, if they apply.  Logical progression is commit to trunk,
+    get feedback and votes on list or in STATUS, then merge into
+    branches/2.2.x, as applicable.
+
+
+RELEASE SHOWSTOPPERS:
+
+  None
+
+PATCHES ACCEPTED TO BACKPORT FROM TRUNK:
+  [ start all new proposals below, under PATCHES PROPOSED. ]
+
+PATCHES PROPOSED TO BACKPORT FROM TRUNK:
+  [ New proposals should be added at the end of the list ]
+
+   * mod_ssl: Add server name indication (RFC 4366) support (PR 34607).
+      Trunk version of patches:
+         http://svn.apache.org/viewvc?view=rev&revision=606190
+         http://svn.apache.org/viewvc?view=rev&revision=607420
+         http://svn.apache.org/viewvc?view=rev&revision=607425
+         http://svn.apache.org/viewvc?view=rev&revision=611216
+         http://svn.apache.org/viewvc/httpd/httpd/trunk/modules/ssl/ssl_engine_kernel.c?r1=611216&r2=630436
+         http://svn.apache.org/viewvc?view=rev&revision=662815
+
+      Backport version for 2.2.x of updated patch:
+         http://people.apache.org/~fuankg/diffs/httpd-2.2.x-sni.diff
+      +1: fuankg
+      +0: like ssl upgrade of 2.2, perhaps this is a good reason to bring
+          httpd-2.4 to completion?  vhost changes could be disruptive to
+          third party module authors.
+      -1: rpluem: jorton found some problems with the trunk version and they
+                  should be fixed / discussed in trunk before we backport.
+
+ * Support chroot on unix-family platforms
+   PR 43596
+   http://svn.apache.org/viewvc?rev=611483&view=rev (source)
+   http://svn.apache.org/viewvc?rev=639005&view=rev (docs)
+   http://svn.apache.org/viewvc?rev=639010&view=rev (mmn)
+   +1: niq
+   rpluem says: I am missing a minor bump and documentation.
+   niq replies: Done.
+   rpluem says: Thanks. Sorry for being picky, but after revisiting the patch
+   again I ask myself how we can be sure that the chroot function is actually
+   present on the platform we compile.
+
+ * mod_rewrite: Allow Cookie option to set secure and HttpOnly flags.
+   PR 44799
+   Trunk version of patch:
+         http://svn.apache.org/viewvc?rev=647395&view=rev
+         http://svn.apache.org/viewvc?rev=660461&view=rev
+         http://svn.apache.org/viewvc?rev=660566&view=rev
+         http://svn.apache.org/viewvc?rev=664330&view=rev
+   Backport version for 2.2.x of patch:
+         Trunk version of patch works
+   +1: rpluem,
+   -1: niq - strcasecmp(NULL, ...) when secure is not set
+   rpluem: Good catch. Should be fixed by r660461.
+
+ * mod_proxy_http: Do not forward an Expect: 100-continue to
+   an HTTP/1.0 server
+   Trunk version of patch:
+         http://svn.apache.org/viewvc?view=rev&revision=661506
+   Backport version for 2.2.x of patch:
+         Trunk version of patch works
+   +1: jim
+
+PATCHES/ISSUES THAT ARE STALLED
+
+   * beos MPM: Create pmain pool and run modules' child_init hooks when
+     entering ap_mpm_run(), then destroy pmain when exiting ap_mpm_run().
+     Otherwise modules' child_init hooks appear to never be executed.
+     Also, destroying pmain ensures that cleanups registered in modules'
+     child_init hooks are performed (e.g., mod_log_config and mod_dbd).
+     Trunk version of patch:
+       http://svn.apache.org/viewvc?view=rev&revision=491922
+     2.2.x version of patch:
+       http://people.apache.org/~chrisd/patches/mod_dbd_pools_groups/mpm_child_init-beos-2.2.x.patch
+     +0: chrisd (abstaining; unable to test)
+
+    * PKCS#7: backport PCKS#7 patches from trunk.
+      +1 ben
+      jerenkrantz: What's the revision number to backport?
+      wrowe asks: ditto jerenkrantz
+      sctemme: svn blame suggests r424707
+      rpluem: Digging through the history suggests that
+              r424735
+              r424821
+              r424823
+              need to be added to this. See also
+              http://mail-archives.apache.org/mod_mbox/httpd-dev/200607.mbox/%3c20060723093125.GA19423@redhat.com%3e
+              and follow ups for more details.
