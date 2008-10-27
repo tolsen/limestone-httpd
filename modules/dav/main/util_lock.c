@@ -161,7 +161,7 @@ DAV_DECLARE(const char *) dav_lock_get_activelock(request_rec *r,
 **    with its contents.
 */
 DAV_DECLARE(dav_error *) dav_lock_parse_lockinfo(request_rec *r,
-                                                 const dav_resource *resource,
+                                                 dav_resource *resource,
                                                  dav_lockdb *lockdb,
                                                  const apr_xml_doc *doc,
                                                  dav_lock **lock_request)
@@ -239,6 +239,8 @@ DAV_DECLARE(dav_error *) dav_lock_parse_lockinfo(request_rec *r,
                                          child->name));
     }
 
+    lock->lockroot = resource->uri;
+
     *lock_request = lock;
     return NULL;
 }
@@ -254,7 +256,20 @@ static dav_error * dav_lock_walker(dav_walk_resource *wres, int calltype)
 {
     dav_walker_ctx *ctx = wres->walk_ctx;
     dav_error *err;
+    const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(ctx->r);
+    const dav_principal *principal = dav_principal_make_from_request(ctx->r);
 
+    if (acl_hooks) {
+        int is_allow;
+        is_allow = (*acl_hooks->is_allow)(principal, 
+                                          (dav_resource *) wres->resource,
+                                          DAV_PERMISSION_WRITE);
+
+        if (!is_allow) {
+            dav_add_response(wres, dav_get_permission_denied_status(ctx->r), NULL);
+            return NULL;
+        }
+    }
     /* We don't want to set indirects on the target */
     if ((*wres->resource->hooks->is_same_resource)(wres->resource,
                                                    ctx->w.root))
@@ -327,7 +342,7 @@ DAV_DECLARE(dav_error *) dav_add_lock(request_rec *r,
         dav_walker_ctx ctx = { { 0 } };
         dav_response *multi_status;
 
-        ctx.w.walk_type = DAV_WALKTYPE_NORMAL | DAV_WALKTYPE_AUTH;
+        ctx.w.walk_type = DAV_WALKTYPE_NORMAL | DAV_WALKTYPE_IGNORE_BINDS;
         ctx.w.func = dav_lock_walker;
         ctx.w.walk_ctx = &ctx;
         ctx.w.pool = r->pool;
@@ -344,8 +359,14 @@ DAV_DECLARE(dav_error *) dav_add_lock(request_rec *r,
         }
 
         if (multi_status != NULL) {
+            /* Add a 424 for the Request-URI */
+            dav_response *resp = apr_pcalloc(r->pool, sizeof(*resp));
+            resp->href = apr_pstrdup(r->pool, resource->uri);
+            resp->status = HTTP_FAILED_DEPENDENCY;
+            resp->next = multi_status;
+
+            *response = resp;
             /* manufacture a 207 error for the multistatus response */
-            *response = multi_status;
             return dav_new_error(r->pool, HTTP_MULTI_STATUS, 0,
                                  "Error(s) occurred on resources during the "
                                  "addition of a depth lock.");
@@ -390,14 +411,14 @@ static dav_error * dav_unlock_walker(dav_walk_resource *wres, int calltype)
             return err;
         }
     }
-
-    if ((err = (*ctx->w.lockdb->hooks->remove_lock)(ctx->w.lockdb,
-                                                    wres->resource,
-                                                    ctx->locktoken)) != NULL) {
-        /* ### should we stop or return a multistatus? looks like STOP */
-        /* ### add a higher-level description? */
-        return err;
-    }
+    
+/*     if ((err = (*ctx->w.lockdb->hooks->remove_lock)(ctx->w.lockdb, */
+/*                                                     wres->resource, */
+/*                                                     ctx->locktoken)) != NULL) { */
+/*         /\* ### should we stop or return a multistatus? looks like STOP *\/ */
+/*         /\* ### add a higher-level description? *\/ */
+/*         return err; */
+/*     } */
 
     return NULL;
 }
@@ -534,7 +555,8 @@ DAV_DECLARE(int) dav_unlock(request_rec *r, const dav_resource *resource,
     /* At this point, lock_resource/locktoken refers to a direct lock (key), ie
      * the root of a depth > 0 lock, or locktoken is null.
      */
-    ctx.w.walk_type = DAV_WALKTYPE_NORMAL | DAV_WALKTYPE_LOCKNULL;
+    ctx.w.walk_type = DAV_WALKTYPE_NORMAL | DAV_WALKTYPE_LOCKNULL
+      | DAV_WALKTYPE_IGNORE_BINDS;
     ctx.w.func = dav_unlock_walker;
     ctx.w.walk_ctx = &ctx;
     ctx.w.pool = r->pool;
@@ -544,7 +566,11 @@ DAV_DECLARE(int) dav_unlock(request_rec *r, const dav_resource *resource,
     ctx.r = r;
     ctx.locktoken = locktoken;
 
+    /* do something about multi_status */
     err = (*repos_hooks->walk)(&ctx.w, DAV_INFINITY, &multi_status);
+    if (err) return err->status;
+
+    err = hooks->remove_lock(lockdb, lock_resource, locktoken);
 
     /* ### fix this! */
     /* ### do something with multi_status */
@@ -648,7 +674,8 @@ static dav_error * dav_inherit_locks(request_rec *r, dav_lockdb *lockdb,
 
     /* <locks> has all our new locks.  Walk down and propagate them. */
 
-    ctx.w.walk_type = DAV_WALKTYPE_NORMAL | DAV_WALKTYPE_LOCKNULL;
+    ctx.w.walk_type = DAV_WALKTYPE_NORMAL | DAV_WALKTYPE_LOCKNULL
+      | DAV_WALKTYPE_IGNORE_BINDS;
     ctx.w.func = dav_inherit_walker;
     ctx.w.walk_ctx = &ctx;
     ctx.w.pool = r->pool;
@@ -737,7 +764,7 @@ DAV_DECLARE(int) dav_get_resource_state(request_rec *r,
 
 DAV_DECLARE(dav_error *) dav_notify_created(request_rec *r,
                                             dav_lockdb *lockdb,
-                                            const dav_resource *resource,
+                                            dav_resource *resource,
                                             int resource_state,
                                             int depth)
 {

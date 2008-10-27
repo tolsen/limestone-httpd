@@ -41,7 +41,6 @@ static const dav_liveprop_spec dav_core_props[] =
 {
     { 0, "comment",              DAV_PROPID_comment,              1 },
     { 0, "creator-displayname",  DAV_PROPID_creator_displayname,  1 },
-    { 0, "displayname",          DAV_PROPID_displayname,          1 },
     { 0, "resourcetype",         DAV_PROPID_resourcetype,         0 },
     { 0, "source",               DAV_PROPID_source,               1 },
 
@@ -95,6 +94,9 @@ static dav_prop_insert dav_core_insert_prop(const dav_resource *resource,
         case DAV_RESOURCE_TYPE_ACTIVITY:
             value = "<D:activity/>";
             break;
+        case DAV_RESOURCE_TYPE_PRINCIPAL:
+            value = "<D:principal/>";
+            break;
 
         default:
             /* ### bad juju */
@@ -123,16 +125,16 @@ static dav_prop_insert dav_core_insert_prop(const dav_resource *resource,
 
     if (what == DAV_PROP_INSERT_SUPPORTED) {
         s = apr_psprintf(p,
-                         "<D:supported-live-property D:name=\"%s\" "
-                         "D:namespace=\"%s\"/>" DEBUG_CR,
-                         info->name, dav_core_namespace_uris[info->ns]);
+                         "<D:supported-live-property><D:prop><D:%s/> "
+                         "</D:prop></D:supported-live-property>" DEBUG_CR,
+                         info->name);
     }
     else if (what == DAV_PROP_INSERT_VALUE && *value != '\0') {
-        s = apr_psprintf(p, "<lp%ld:%s>%s</lp%ld:%s>" DEBUG_CR,
-                         global_ns, info->name, value, global_ns, info->name);
+        s = apr_psprintf(p, "<D:%s>%s</D:%s>" DEBUG_CR,
+                         info->name, value, info->name);
     }
     else {
-        s = apr_psprintf(p, "<lp%ld:%s/>" DEBUG_CR, global_ns, info->name);
+        s = apr_psprintf(p, "<D:%s/>" DEBUG_CR, info->name);
     }
     apr_text_append(p, phdr, s);
 

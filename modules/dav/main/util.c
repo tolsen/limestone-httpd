@@ -52,12 +52,15 @@ DAV_DECLARE(dav_error*) dav_new_error(apr_pool_t *p, int status,
 DAV_DECLARE(dav_error*) dav_new_error_tag(apr_pool_t *p, int status,
                                           int error_id, const char *desc,
                                           const char *namespace,
-                                          const char *tagname)
+                                          const char *tagname,
+                                          const char *content)
 {
     dav_error *err = dav_new_error(p, status, error_id, desc);
 
     err->tagname = tagname;
     err->namespace = namespace;
+    err->content = "";
+    if (content) err->content = content;
 
     return err;
 }
@@ -85,7 +88,7 @@ DAV_DECLARE(void) dav_check_bufsize(apr_pool_t * p, dav_buffer *pbuf,
         char *newbuf;
 
         pbuf->alloc_len += extra_needed + DAV_BUFFER_PAD;
-        newbuf = apr_palloc(p, pbuf->alloc_len);
+        newbuf = apr_pcalloc(p, pbuf->alloc_len);
         memcpy(newbuf, pbuf->buf, pbuf->cur_len);
         pbuf->buf = newbuf;
     }
@@ -106,7 +109,7 @@ DAV_DECLARE(void) dav_set_bufsize(apr_pool_t * p, dav_buffer *pbuf,
         if (pbuf->alloc_len < DAV_BUFFER_MINSIZE)
             pbuf->alloc_len = DAV_BUFFER_MINSIZE;
 
-        pbuf->buf = apr_palloc(p, pbuf->alloc_len);
+        pbuf->buf = apr_pcalloc(p, pbuf->alloc_len);
     }
     pbuf->cur_len = size;
 }
@@ -161,14 +164,12 @@ DAV_DECLARE(void) dav_buffer_place_mem(apr_pool_t *p, dav_buffer *pbuf,
 */
 DAV_DECLARE(dav_lookup_result) dav_lookup_uri(const char *uri,
                                               request_rec * r,
-                                              int must_be_absolute)
+                                              int must_be_absolute,
+                                              int allow_cross_domain)
 {
     dav_lookup_result result = { 0 };
-    const char *scheme;
-    apr_port_t port;
     apr_uri_t comp;
     char *new_file;
-    const char *domain;
 
     /* first thing to do is parse the URI into various components */
     if (apr_uri_parse(r->pool, uri, &comp) != APR_SUCCESS) {
@@ -184,7 +185,7 @@ DAV_DECLARE(dav_lookup_result) dav_lookup_uri(const char *uri,
         return result;
     }
 
-    /* the URI must not have a query (args) or a fragment */
+    /* the URI must not have a query (args) or a fragment 
     if (comp.query != NULL || comp.fragment != NULL) {
         result.err.status = HTTP_BAD_REQUEST;
         result.err.desc =
@@ -192,7 +193,10 @@ DAV_DECLARE(dav_lookup_result) dav_lookup_uri(const char *uri,
             "(a query or a fragment).";
         return result;
     }
+    */
 
+#if 0
+    /* scheme checking breaks if the main request is https:, disabling for now */
     /* If the scheme or port was provided, then make sure that it matches
        the scheme/port of this request. If the request must be absolute,
        then require the (explicit/implicit) scheme/port be matching.
@@ -233,6 +237,7 @@ DAV_DECLARE(dav_lookup_result) dav_lookup_uri(const char *uri,
             return result;
         }
     }
+#endif
 
     /* we have verified the scheme, port, and general structure */
 
@@ -247,12 +252,12 @@ DAV_DECLARE(dav_lookup_result) dav_lookup_uri(const char *uri,
     ** ### this is a big hack. Apache should provide a better way.
     ** ### maybe the admin should list the unqualified hosts in a
     ** ### <ServerAlias> block?
-    */
     if (comp.hostname != NULL
         && strrchr(comp.hostname, '.') == NULL
         && (domain = strchr(r->server->server_hostname, '.')) != NULL) {
         comp.hostname = apr_pstrcat(r->pool, comp.hostname, domain, NULL);
     }
+    */
 
     /* now, if a hostname was provided, then verify that it represents the
        same server as the current connection. note that we just use our
@@ -265,6 +270,12 @@ DAV_DECLARE(dav_lookup_result) dav_lookup_uri(const char *uri,
         return result;
     }
 #endif
+    if (!allow_cross_domain && comp.hostname != NULL && r->hostname != NULL
+        && strcmp(comp.hostname, r->hostname)) {
+        result.err.status = HTTP_BAD_GATEWAY;
+        result.err.desc = "Destination URI refers to a different domain.";
+        return result;
+    }
 
     /* we have verified that the requested URI denotes the same server as
        the current request. Therefore, we can use ap_sub_req_lookup_uri() */
@@ -296,6 +307,14 @@ DAV_DECLARE(int) dav_validate_root(const apr_xml_doc *doc,
         strcmp(doc->root->name, tagname) == 0;
 }
 
+/* Validate root element uses a given tagname and no check on NAMESPACE */ 
+DAV_DECLARE(int) dav_validate_root_no_ns(const apr_xml_doc *doc,
+                                         const char *tagname)
+{
+    return doc->root &&
+        strcmp(doc->root->name, tagname) == 0;
+}
+
 /* find and return the (unique) child with a given DAV: tagname */
 DAV_DECLARE(apr_xml_elem *) dav_find_child(const apr_xml_elem *elem,
                                            const char *tagname)
@@ -308,6 +327,18 @@ DAV_DECLARE(apr_xml_elem *) dav_find_child(const apr_xml_elem *elem,
     return NULL;
 }
 
+/* find and return the (unique) child with a given tagname - No check on NAMESPACE*/
+DAV_DECLARE(apr_xml_elem *) dav_find_child_no_ns(const apr_xml_elem *elem,
+                                                 const char *tagname)
+{
+    apr_xml_elem *child = elem->first_child;
+
+    for (; child; child = child->next)
+        if (!strcmp(child->name, tagname))
+            return child;
+    return NULL;
+}
+
 /* gather up all the CDATA into a single string */
 DAV_DECLARE(const char *) dav_xml_get_cdata(const apr_xml_elem *elem, apr_pool_t *pool,
                               int strip_white)
@@ -315,11 +346,14 @@ DAV_DECLARE(const char *) dav_xml_get_cdata(const apr_xml_elem *elem, apr_pool_t
     apr_size_t len = 0;
     apr_text *scan;
     const apr_xml_elem *child;
-    char *cdata;
+    char *cdata = NULL;
     char *s;
     apr_size_t tlen;
     const char *found_text = NULL; /* initialize to avoid gcc warning */
     int found_count = 0;
+
+    /* die if elem is NULL */
+    if(!elem) return cdata;
 
     for (scan = elem->first_cdata.first; scan != NULL; scan = scan->next) {
         found_text = scan->text;
@@ -350,7 +384,7 @@ DAV_DECLARE(const char *) dav_xml_get_cdata(const apr_xml_elem *elem, apr_pool_t
             return found_text;
     }
 
-    cdata = s = apr_palloc(pool, len + 1);
+    cdata = s = apr_pcalloc(pool, len + 1);
 
     for (scan = elem->first_cdata.first; scan != NULL; scan = scan->next) {
         tlen = strlen(scan->text);
@@ -752,660 +786,597 @@ static dav_error * dav_process_if_header(request_rec *r, dav_if_header **p_ih)
     return NULL;
 }
 
-static int dav_find_submitted_locktoken(const dav_if_header *if_header,
-                                        const dav_lock *lock_list,
-                                        const dav_hooks_locks *locks_hooks)
+char *chomp_slash(char *str)
 {
-    for (; if_header != NULL; if_header = if_header->next) {
-        const dav_if_state_list *state_list;
-
-        for (state_list = if_header->state;
-             state_list != NULL;
-             state_list = state_list->next) {
-
-            if (state_list->type == dav_if_opaquelock) {
-                const dav_lock *lock;
-
-                /* given state_list->locktoken, match it */
-
-                /*
-                ** The resource will have one or more lock tokens. We only
-                ** need to match one of them against any token in the
-                ** If: header.
-                **
-                ** One token case: It is an exclusive or shared lock. Either
-                **                 way, we must find it.
-                **
-                ** N token case: They are shared locks. By policy, we need
-                **               to match only one. The resource's other
-                **               tokens may belong to somebody else (so we
-                **               shouldn't see them in the If: header anyway)
-                */
-                for (lock = lock_list; lock != NULL; lock = lock->next) {
-
-                    if (!(*locks_hooks->compare_locktoken)(state_list->locktoken, lock->locktoken)) {
-                        return 1;
-                    }
-                }
-            }
-        }
+    int len = strlen(str);
+    while (len > 1 && str[len - 1] == '/') {
+	str[len - 1] = '\0';
+	len = strlen(str);
     }
-
-    return 0;
+    return str;
 }
 
-/* dav_validate_resource_state:
- *    Returns NULL if path/uri meets if-header and lock requirements
- */
-static dav_error * dav_validate_resource_state(apr_pool_t *p,
-                                               const dav_resource *resource,
-                                               dav_lockdb *lockdb,
-                                               const dav_if_header *if_header,
-                                               int flags,
-                                               dav_buffer *pbuf,
-                                               request_rec *r)
+#define DAV_VALIDATE_A_LOCK 0x0001
+#define DAV_VALIDATE_ALL_LOCKS 0x0002
+
+dav_error *dav_validate_ifheader_locks(request_rec *r, 
+                                       const dav_hooks_locks *locks_hooks,
+                                       dav_if_header *ifhdr,
+                                       dav_lock *locks, int flags,
+                                       dav_lock **p_offending_lock)
 {
-    dav_error *err;
-    const char *uri;
-    const char *etag;
-    const dav_hooks_locks *locks_hooks = (lockdb ? lockdb->hooks : NULL);
-    const dav_if_header *ifhdr_scan;
-    dav_if_state_list *state_list;
-    dav_lock *lock_list;
-    dav_lock *lock;
-    int num_matched;
-    int num_that_apply;
-    int seen_locktoken;
-    apr_size_t uri_len;
-    const char *reason = NULL;
+    apr_pool_t *pool = r->pool;
+    dav_lock *l_i;
 
-    /* DBG1("validate: <%s>", resource->uri); */
+    for (; ifhdr; ifhdr = ifhdr->next) {
+        dav_if_state_list *state_i;
+        for(state_i = ifhdr->state; state_i; state_i = state_i->next) {
+            if (state_i->type != dav_if_opaquelock)
+                continue;
 
-    /*
-    ** The resource will have one of three states:
-    **
-    ** 1) No locks. We have no special requirements that the user supply
-    **    specific locktokens. One of the state lists must match, and
-    **    we're done.
-    **
-    ** 2) One exclusive lock. The locktoken must appear *anywhere* in the
-    **    If: header. Of course, asserting the token in a "Not" term will
-    **    quickly fail that state list :-). If the locktoken appears in
-    **    one of the state lists *and* one state list matches, then we're
-    **    done.
-    **
-    ** 3) One or more shared locks. One of the locktokens must appear
-    **    *anywhere* in the If: header. If one of the locktokens appears,
-    **    and we match one state list, then we are done.
-    **
-    ** The <seen_locktoken> variable determines whether we have seen one
-    ** of this resource's locktokens in the If: header.
-    */
+            for(l_i = locks; l_i; l_i = l_i->next) {
+                if(0 != locks_hooks->compare_locktoken
+                   (l_i->locktoken, state_i->locktoken))
+                    continue;
 
-    /*
-    ** If this is a new lock request, <flags> will contain the requested
-    ** lock scope.  Three rules apply:
-    **
-    ** 1) Do not require a (shared) locktoken to be seen (when we are
-    **    applying another shared lock)
-    ** 2) If the scope is exclusive and we see any locks, fail.
-    ** 3) If the scope is shared and we see an exclusive lock, fail.
-    */
+                if (strcmp(r->user, l_i->auth_user) != 0) {
+                    int allow = 0;
+                    if (flags & DAV_VALIDATE_ALL_LOCKS) {
+                        const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(r);
+                        const dav_principal *principal = 
+                          dav_principal_make_from_request(r);
+                        request_rec *new_req;
+                        dav_resource *lr_res;
+                        new_req = ap_sub_req_lookup_uri(l_i->lockroot, r, NULL);
+                        dav_get_resource(new_req, 0, 0, &lr_res);
 
-    if (lockdb == NULL) {
-        /* we're in State 1. no locks. */
-        lock_list = NULL;
-    }
-    else {
-        /*
-        ** ### hrm... we don't need to have these fully
-        ** ### resolved since we're only looking at the
-        ** ### locktokens...
-        **
-        ** ### use get_locks w/ calltype=PARTIAL
-        */
-        if ((err = dav_lock_query(lockdb, resource, &lock_list)) != NULL) {
-            return dav_push_error(p,
-                                  HTTP_INTERNAL_SERVER_ERROR, 0,
-                                  "The locks could not be queried for "
-                                  "verification against a possible \"If:\" "
-                                  "header.",
-                                  err);
-        }
+                        allow = (*acl_hooks->is_allow)
+                          (principal, lr_res, DAV_PERMISSION_UNLOCK);
+                    }
 
-        /* lock_list now determines whether we're in State 1, 2, or 3. */
-    }
+                    if (!allow) {
+                        if (p_offending_lock) *p_offending_lock = l_i;
+                        return dav_new_error(pool, HTTP_LOCKED, 0,
+                                             "Lock owned by another user");
+                    }
+                }
 
-    /*
-    ** For a new, exclusive lock: if any locks exist, fail.
-    ** For a new, shared lock:    if an exclusive lock exists, fail.
-    **                            else, do not require a token to be seen.
-    */
-    if (flags & DAV_LOCKSCOPE_EXCLUSIVE) {
-        if (lock_list != NULL) {
-            return dav_new_error(p, HTTP_LOCKED, 0,
-                                 "Existing lock(s) on the requested resource "
-                                 "prevent an exclusive lock.");
-        }
-
-        /*
-        ** There are no locks, so we can pretend that we've already met
-        ** any requirement to find the resource's locks in an If: header.
-        */
-        seen_locktoken = 1;
-    }
-    else if (flags & DAV_LOCKSCOPE_SHARED) {
-        /*
-        ** Strictly speaking, we don't need this loop. Either the first
-        ** (and only) lock will be EXCLUSIVE, or none of them will be.
-        */
-        for (lock = lock_list; lock != NULL; lock = lock->next) {
-            if (lock->scope == DAV_LOCKSCOPE_EXCLUSIVE) {
-                return dav_new_error(p, HTTP_LOCKED, 0,
-                                     "The requested resource is already "
-                                     "locked exclusively.");
+                if (flags & DAV_VALIDATE_A_LOCK)
+                    return NULL;
+                else l_i->validated = 1; /*set in validated_hash*/
             }
         }
-
-        /*
-        ** The locks on the resource (if any) are all shared. Set the
-        ** <seen_locktoken> flag to indicate that we do not need to find
-        ** the locks in an If: header.
-        */
-        seen_locktoken = 1;
-    }
-    else {
-        /*
-        ** For methods other than LOCK:
-        **
-        ** If we have no locks, then <seen_locktoken> can be set to true --
-        ** pretending that we've already met the requirement of seeing one
-        ** of the resource's locks in the If: header.
-        **
-        ** Otherwise, it must be cleared and we'll look for one.
-        */
-        seen_locktoken = (lock_list == NULL);
     }
 
-    /*
-    ** If there is no If: header, then we can shortcut some logic:
-    **
-    ** 1) if we do not need to find a locktoken in the (non-existent) If:
-    **    header, then we are successful.
-    **
-    ** 2) if we must find a locktoken in the (non-existent) If: header, then
-    **    we fail.
-    */
-    if (if_header == NULL) {
-        if (seen_locktoken)
-            return NULL;
-
-        return dav_new_error(p, HTTP_LOCKED, 0,
-                             "This resource is locked and an \"If:\" header "
-                             "was not supplied to allow access to the "
-                             "resource.");
-    }
-    /* the If: header is present */
-
-    /*
-    ** If a dummy header is present (because of a Lock-Token: header), then
-    ** we are required to find that token in this resource's set of locks.
-    ** If we have no locks, then we immediately fail.
-    **
-    ** This is a 400 (Bad Request) since they should only submit a locktoken
-    ** that actually exists.
-    **
-    ** Don't issue this response if we're talking about the parent resource.
-    ** It is okay for that resource to NOT have this locktoken.
-    ** (in fact, it certainly will not: a dummy_header only occurs for the
-    **  UNLOCK method, the parent is checked only for locknull resources,
-    **  and the parent certainly does not have the (locknull's) locktoken)
-    */
-    if (lock_list == NULL && if_header->dummy_header) {
-        if (flags & DAV_VALIDATE_IS_PARENT)
-            return NULL;
-        return dav_new_error(p, HTTP_BAD_REQUEST, 0,
-                             "The locktoken specified in the \"Lock-Token:\" "
-                             "header is invalid because this resource has no "
-                             "outstanding locks.");
-    }
-
-    /*
-    ** Prepare the input URI. We want the URI to never have a trailing slash.
-    **
-    ** When URIs are placed into the dav_if_header structure, they are
-    ** guaranteed to never have a trailing slash. If the URIs are equivalent,
-    ** then it doesn't matter if they both lack a trailing slash -- they're
-    ** still equivalent.
-    **
-    ** Note: we could also ensure that a trailing slash is present on both
-    ** URIs, but the majority of URIs provided to us via a resource walk
-    ** will not contain that trailing slash.
-    */
-    uri = resource->uri;
-    uri_len = strlen(uri);
-    if (uri[uri_len - 1] == '/') {
-        dav_set_bufsize(p, pbuf, uri_len);
-        memcpy(pbuf->buf, uri, uri_len);
-        pbuf->buf[--uri_len] = '\0';
-        uri = pbuf->buf;
-    }
-
-    /* get the resource's etag; we may need it during the checks */
-    etag = (*resource->hooks->getetag)(resource);
-
-    /* how many state_lists apply to this URI? */
-    num_that_apply = 0;
-
-    /* If there are if-headers, fail if this resource
-     * does not match at least one state_list.
-     */
-    for (ifhdr_scan = if_header;
-         ifhdr_scan != NULL;
-         ifhdr_scan = ifhdr_scan->next) {
-
-        /* DBG2("uri=<%s>  if_uri=<%s>", uri, ifhdr_scan->uri ? ifhdr_scan->uri : "(no uri)"); */
-
-        if (ifhdr_scan->uri != NULL
-            && (uri_len != ifhdr_scan->uri_len
-                || memcmp(uri, ifhdr_scan->uri, uri_len) != 0)) {
-            /*
-            ** A tagged-list's URI doesn't match this resource's URI.
-            ** Skip to the next state_list to see if it will match.
-            */
-            continue;
-        }
-
-        /* this state_list applies to this resource */
-
-        /*
-        ** ### only one state_list should ever apply! a no-tag, or a tagged
-        ** ### where S9.4.2 states only one can match.
-        **
-        ** ### revamp this code to loop thru ifhdr_scan until we find the
-        ** ### matching state_list. process it. stop.
-        */
-        ++num_that_apply;
-
-        /* To succeed, resource must match *all* of the states
-         * specified in the state_list.
-         */
-        for (state_list = ifhdr_scan->state;
-             state_list != NULL;
-             state_list = state_list->next) {
-
-            switch(state_list->type) {
-            case dav_if_etag:
-            {
-                const char *given_etag, *current_etag;
-                int mismatch;
-
-                /* Do a weak entity comparison function as defined in
-                 * RFC 2616 13.3.3.
-                 */
-                if (state_list->etag[0] == 'W' &&
-                    state_list->etag[1] == '/') {
-                    given_etag = state_list->etag + 2;
-                }
-                else {
-                    given_etag = state_list->etag;
-                }
-                if (etag[0] == 'W' &&
-                    etag[1] == '/') {
-                    current_etag = etag + 2;
-                }
-                else {
-                    current_etag = etag;
-                }
-
-                mismatch = strcmp(given_etag, current_etag);
-
-                if (state_list->condition == DAV_IF_COND_NORMAL && mismatch) {
-                    /*
-                    ** The specified entity-tag does not match the
-                    ** entity-tag on the resource. This state_list is
-                    ** not going to match. Bust outta here.
-                    */
-                    reason =
-                        "an entity-tag was specified, but the resource's "
-                        "actual ETag does not match.";
-                    goto state_list_failed;
-                }
-                else if (state_list->condition == DAV_IF_COND_NOT
-                         && !mismatch) {
-                    /*
-                    ** The specified entity-tag DOES match the
-                    ** entity-tag on the resource. This state_list is
-                    ** not going to match. Bust outta here.
-                    */
-                    reason =
-                        "an entity-tag was specified using the \"Not\" form, "
-                        "but the resource's actual ETag matches the provided "
-                        "entity-tag.";
-                    goto state_list_failed;
-                }
-                break;
+    if (flags & DAV_VALIDATE_ALL_LOCKS) {
+        for (l_i = locks; l_i; l_i = l_i->next)
+            if (!l_i->validated/* use validated_hash*/) {
+                if (p_offending_lock) *p_offending_lock = l_i;
+                return dav_new_error_tag(pool, HTTP_LOCKED, 0,
+                                         NULL, NULL, "lock-token-submitted",
+                                         apr_psprintf(pool, 
+                                                      "<D:href>%s</D:href>", 
+                                                      l_i->lockroot));
             }
-
-            case dav_if_opaquelock:
-                if (lockdb == NULL) {
-                    if (state_list->condition == DAV_IF_COND_NOT) {
-                        /* the locktoken is definitely not there! (success) */
-                        continue;
-                    }
-
-                    /* condition == DAV_IF_COND_NORMAL */
-
-                    /*
-                    ** If no lockdb is provided, then validation fails for
-                    ** this state_list (NORMAL means we were supposed to
-                    ** find the token, which we obviously cannot do without
-                    ** a lock database).
-                    **
-                    ** Go and try the next state list.
-                    */
-                    reason =
-                        "a State-token was supplied, but a lock database "
-                        "is not available for to provide the required lock.";
-                    goto state_list_failed;
-                }
-
-                /* Resource validation 'fails' if:
-                 *    ANY  of the lock->locktokens match
-                 *         a NOT state_list->locktoken,
-                 * OR
-                 *    NONE of the lock->locktokens match
-                 *         a NORMAL state_list->locktoken.
-                 */
-                num_matched = 0;
-                for (lock = lock_list; lock != NULL; lock = lock->next) {
-
-                    /*
-                    DBG2("compare: rsrc=%s  ifhdr=%s",
-                         (*locks_hooks->format_locktoken)(p, lock->locktoken),
-                         (*locks_hooks->format_locktoken)(p, state_list->locktoken));
-                    */
-
-                    /* nothing to do if the locktokens do not match. */
-                    if ((*locks_hooks->compare_locktoken)(state_list->locktoken, lock->locktoken)) {
-                        continue;
-                    }
-
-                    /*
-                    ** We have now matched up one of the resource's locktokens
-                    ** to a locktoken in a State-token in the If: header.
-                    ** Note this fact, so that we can pass the overall
-                    ** requirement of seeing at least one of the resource's
-                    ** locktokens.
-                    */
-                    seen_locktoken = 1;
-
-                    if (state_list->condition == DAV_IF_COND_NOT) {
-                        /*
-                        ** This state requires that the specified locktoken
-                        ** is NOT present on the resource. But we just found
-                        ** it. There is no way this state-list can now
-                        ** succeed, so go try another one.
-                        */
-                        reason =
-                            "a State-token was supplied, which used a "
-                            "\"Not\" condition. The State-token was found "
-                            "in the locks on this resource";
-                        goto state_list_failed;
-                    }
-
-                    /* condition == DAV_IF_COND_NORMAL */
-
-                    /* Validate auth_user:  If an authenticated user created
-                    ** the lock, only the same user may submit that locktoken
-                    ** to manipulate a resource.
-                    */
-                    if (lock->auth_user &&
-                        (!r->user ||
-                         strcmp(lock->auth_user, r->user))) {
-                        const char *errmsg;
-
-                        errmsg = apr_pstrcat(p, "User \"",
-                                            r->user,
-                                            "\" submitted a locktoken created "
-                                            "by user \"",
-                                            lock->auth_user, "\".", NULL);
-                        return dav_new_error(p, HTTP_FORBIDDEN, 0, errmsg);
-                    }
-
-                    /*
-                    ** We just matched a specified State-Token to one of the
-                    ** resource's locktokens.
-                    **
-                    ** Break out of the lock scan -- we only needed to find
-                    ** one match (actually, there shouldn't be any other
-                    ** matches in the lock list).
-                    */
-                    num_matched = 1;
-                    break;
-                }
-
-                if (num_matched == 0
-                    && state_list->condition == DAV_IF_COND_NORMAL) {
-                    /*
-                    ** We had a NORMAL state, meaning that we should have
-                    ** found the State-Token within the locks on this
-                    ** resource. We didn't, so this state_list must fail.
-                    */
-                    reason =
-                        "a State-token was supplied, but it was not found "
-                        "in the locks on this resource.";
-                    goto state_list_failed;
-                }
-
-                break;
-
-            case dav_if_unknown:
-                /* Request is predicated on some unknown state token,
-                 * which must be presumed to *not* match, so fail
-                 * unless this is a Not condition. */
-
-                if (state_list->condition == DAV_IF_COND_NORMAL) {
-                    reason =
-                        "an unknown state token was supplied";
-                    goto state_list_failed;
-                }
-                break;
-
-            } /* switch */
-        } /* foreach ( state_list ) */
-
-        /*
-        ** We've checked every state in this state_list and none of them
-        ** have failed. Since all of them succeeded, then we have a matching
-        ** state list and we may be done.
-        **
-        ** The next requirement is that we have seen one of the resource's
-        ** locktokens (if any). If we have, then we can just exit. If we
-        ** haven't, then we need to keep looking.
-        */
-        if (seen_locktoken) {
-            /* woo hoo! */
-            return NULL;
-        }
-
-        /*
-        ** Haven't seen one. Let's break out of the search and just look
-        ** for a matching locktoken.
-        */
-        break;
-
-        /*
-        ** This label is used when we detect that a state_list is not
-        ** going to match this resource. We bust out and try the next
-        ** state_list.
-        */
-      state_list_failed:
-        ;
-
-    } /* foreach ( ifhdr_scan ) */
-
-    /*
-    ** The above loop exits for one of two reasons:
-    **   1) a state_list matched and seen_locktoken is false.
-    **   2) all if_header structures were scanned, without (1) occurring
-    */
-
-    if (ifhdr_scan == NULL) {
-        /*
-        ** We finished the loop without finding any matching state lists.
-        */
-
-        /*
-        ** If none of the state_lists apply to this resource, then we
-        ** may have succeeded. Note that this scenario implies a
-        ** tagged-list with no matching state_lists. If the If: header
-        ** was a no-tag-list, then it would have applied to this resource.
-        **
-        ** S9.4.2 states that when no state_lists apply, then the header
-        ** should be ignored.
-        **
-        ** If we saw one of the resource's locktokens, then we're done.
-        ** If we did not see a locktoken, then we fail.
-        */
-        if (num_that_apply == 0) {
-            if (seen_locktoken)
-                return NULL;
-
-            /*
-            ** We may have aborted the scan before seeing the locktoken.
-            ** Rescan the If: header to see if we can find the locktoken
-            ** somewhere.
-            **
-            ** Note that seen_locktoken == 0 implies lock_list != NULL
-            ** which implies locks_hooks != NULL.
-            */
-            if (dav_find_submitted_locktoken(if_header, lock_list,
-                                             locks_hooks)) {
-                /*
-                ** We found a match! We're set... none of the If: header
-                ** assertions apply (implicit success), and the If: header
-                ** specified the locktoken somewhere. We're done.
-                */
-                return NULL;
-            }
-
-            return dav_new_error(p, HTTP_LOCKED, 0 /* error_id */,
-                                 "This resource is locked and the \"If:\" "
-                                 "header did not specify one of the "
-                                 "locktokens for this resource's lock(s).");
-        }
-        /* else: one or more state_lists were applicable, but failed. */
-
-        /*
-        ** If the dummy_header did not match, then they specified an
-        ** incorrect token in the Lock-Token header. Forget whether the
-        ** If: statement matched or not... we'll tell them about the
-        ** bad Lock-Token first. That is considered a 400 (Bad Request).
-        */
-        if (if_header->dummy_header) {
-            return dav_new_error(p, HTTP_BAD_REQUEST, 0,
-                                 "The locktoken specified in the "
-                                 "\"Lock-Token:\" header did not specify one "
-                                 "of this resource's locktoken(s).");
-        }
-
-        if (reason == NULL) {
-            return dav_new_error(p, HTTP_PRECONDITION_FAILED, 0,
-                                 "The preconditions specified by the \"If:\" "
-                                 "header did not match this resource.");
-        }
-
-        return dav_new_error(p, HTTP_PRECONDITION_FAILED, 0,
-                             apr_psprintf(p,
-                                         "The precondition(s) specified by "
-                                         "the \"If:\" header did not match "
-                                         "this resource. At least one "
-                                         "failure is because: %s", reason));
+    } else if ( flags & DAV_VALIDATE_A_LOCK && locks) {
+            return dav_new_error_tag(pool, HTTP_LOCKED, 0,
+                                     "The resource is locked", locks->lockroot, 
+                                     "lock-token-submitted",
+                                     apr_psprintf(pool, "<D:href>%s</D:href>", 
+                                                  locks->lockroot));    
     }
-
-    /* assert seen_locktoken == 0 */
-
-    /*
-    ** ifhdr_scan != NULL implies we found a matching state_list.
-    **
-    ** Since we're still here, it also means that we have not yet found
-    ** one the resource's locktokens in the If: header.
-    **
-    ** Scan all the if_headers and states looking for one of this
-    ** resource's locktokens. Note that we need to go back and scan them
-    ** all -- we may have aborted a scan with a failure before we saw a
-    ** matching token.
-    **
-    ** Note that seen_locktoken == 0 implies lock_list != NULL which implies
-    ** locks_hooks != NULL.
-    */
-    if (dav_find_submitted_locktoken(if_header, lock_list, locks_hooks)) {
-        /*
-        ** We found a match! We're set... we have a matching state list,
-        ** and the If: header specified the locktoken somewhere. We're done.
-        */
-        return NULL;
-    }
-
-    /*
-    ** We had a matching state list, but the user agent did not specify one
-    ** of this resource's locktokens. Tell them so.
-    **
-    ** Note that we need to special-case the message on whether a "dummy"
-    ** header exists. If it exists, yet we didn't see a needed locktoken,
-    ** then that implies the dummy header (Lock-Token header) did NOT
-    ** specify one of this resource's locktokens. (this implies something
-    ** in the real If: header matched)
-    **
-    ** We want to note the 400 (Bad Request) in favor of a 423 (Locked).
-    */
-    if (if_header->dummy_header) {
-        return dav_new_error(p, HTTP_BAD_REQUEST, 0,
-                             "The locktoken specified in the "
-                             "\"Lock-Token:\" header did not specify one "
-                             "of this resource's locktoken(s).");
-    }
-
-    return dav_new_error(p, HTTP_LOCKED, 1 /* error_id */,
-                         "This resource is locked and the \"If:\" header "
-                         "did not specify one of the "
-                         "locktokens for this resource's lock(s).");
-}
-
-/* dav_validate_walker:  Walker callback function to validate resource state */
-static dav_error * dav_validate_walker(dav_walk_resource *wres, int calltype)
-{
-    dav_walker_ctx *ctx = wres->walk_ctx;
-    dav_error *err;
-
-    if ((err = dav_validate_resource_state(ctx->w.pool, wres->resource,
-                                           ctx->w.lockdb,
-                                           ctx->if_header, ctx->flags,
-                                           &ctx->work_buf, ctx->r)) == NULL) {
-        /* There was no error, so just bug out. */
-        return NULL;
-    }
-
-    /*
-    ** If we have a serious server error, or if the request itself failed,
-    ** then just return error (not a multistatus).
-    */
-    if (ap_is_HTTP_SERVER_ERROR(err->status)
-        || (*wres->resource->hooks->is_same_resource)(wres->resource,
-                                                      ctx->w.root)) {
-        /* ### maybe push a higher-level description? */
-        return err;
-    }
-
-    /* associate the error with the current URI */
-    dav_add_response(wres, err->status, NULL);
 
     return NULL;
 }
 
+#define AHKS APR_HASH_KEY_STRING
+
+typedef struct {
+    dav_walk_params *wp;
+    request_rec *rec;
+    const dav_hooks_locks *lock_hooks;
+    dav_lockdb *lockdb;
+
+    dav_lock *locks_to_inherit;
+    dav_lock *new_lock_info;
+
+    dav_bind *bind1;
+    dav_bind *bind2;
+
+    int flags;
+
+    apr_hash_t *uri_uuid;
+    apr_hash_t *uuid_dinf_lock;
+    apr_hash_t *res_ltl_map;
+} dav_bind_lock_walker_ctx;
+
+int check_for_lock_clashes(const dav_hooks_locks *hooks,
+                           const dav_lock *lock1, const dav_lock *lock2)
+{
+    if (lock1 && lock2) {
+        if ((lock1->scope != lock2->scope)
+            || lock1->scope == DAV_LOCKSCOPE_EXCLUSIVE) {
+            if (hooks->compare_locktoken(lock1->locktoken, lock2->locktoken) == 0)
+                return 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void filter_locks_of_depth(dav_lock **p_locks, int depth)
+{
+    dav_lock *li = *p_locks;
+    dav_lock *li_filtered = NULL;
+
+    *p_locks = NULL;
+
+    while (li) {
+        dav_lock *li_next = li->next;
+        li->next = NULL;
+        if (li->depth != depth) {
+            if (li_filtered)
+                li_filtered->next = li;
+            else *p_locks = li_filtered = li;
+
+            li_filtered = li;
+        }
+        li = li_next;
+    }
+}
+
+dav_error *dav_bind_locks_validate_walker(dav_walk_resource *wres, int calltype)
+{
+    dav_bind_lock_walker_ctx *ctx = wres->walk_ctx;
+    apr_pool_t *pool = wres->pool;
+    const dav_resource *res = wres->resource;
+    dav_lock *lock = NULL;
+    int clash = 0;
+    dav_error *clash_err = dav_new_error(pool, HTTP_CONFLICT, 0,
+                                         "This operation can't be performed");
+
+    if (ctx->uuid_dinf_lock) {
+        char *parent_uri = NULL, *par_uuid = NULL;
+        dav_lock *par_dinf_lock = NULL, *own_dinf_lock = NULL;
+
+        apr_hash_set(ctx->uri_uuid, res->uri, AHKS, res->uuid);
+        lock = apr_hash_get(ctx->res_ltl_map, res->uuid, AHKS);
+    
+        parent_uri = ap_make_dirstr_parent(pool, res->uri);
+        chomp_slash(parent_uri);
+        par_uuid = apr_hash_get(ctx->uri_uuid, parent_uri, AHKS);
+
+        /* Check for any clashes among the depth infinity locks that'll apply to
+           this resource after the bind */
+        own_dinf_lock = apr_hash_get(ctx->uuid_dinf_lock, res->uuid, AHKS);
+        if (par_uuid)
+            par_dinf_lock = apr_hash_get(ctx->uuid_dinf_lock, par_uuid, AHKS);
+
+        if (own_dinf_lock == NULL && lock && (lock->depth > 0)) {
+            own_dinf_lock = lock;
+            apr_hash_set(ctx->uuid_dinf_lock, res->uuid, AHKS, own_dinf_lock);
+        }
+        if (own_dinf_lock)
+            clash = check_for_lock_clashes
+              (ctx->lock_hooks, own_dinf_lock, par_dinf_lock);
+        else if (par_dinf_lock)
+            apr_hash_set(ctx->uuid_dinf_lock, res->uuid, AHKS, par_dinf_lock);
+        if (clash) return clash_err;
+    }
+
+    if (!(ctx->flags & DAV_VALIDATE_IGNORE_TARGET_LOCKS)) {
+        /* No need to do this for COPY */
+        dav_lock *ltl = NULL;
+        ctx->lock_hooks->get_locks_not_through_binds
+          (ctx->lockdb, res, ctx->bind1, ctx->bind2, &ltl);
+
+        clash = check_for_lock_clashes(ctx->lock_hooks, lock, ltl);
+        if (clash) return clash_err;
+        if (!lock) lock = ltl;
+    }
+
+    clash = check_for_lock_clashes(ctx->lock_hooks, lock, ctx->locks_to_inherit);
+    if (clash) return clash_err;
+    if (!lock) lock = ctx->locks_to_inherit;
+
+    clash = check_for_lock_clashes(ctx->lock_hooks, lock, ctx->new_lock_info);
+    if (clash) {
+        if (res == ctx->wp->root)
+            return dav_new_error(pool, HTTP_LOCKED, 0, "conflicting-lock");
+        else {
+            dav_add_response(wres, HTTP_LOCKED, NULL);
+            return dav_new_error(pool, HTTP_MULTI_STATUS, 0, "Error on child");
+        }
+    }
+
+    return NULL;
+}
+
+DAV_DECLARE(dav_error *) dav_validate_bind(request_rec *r,
+                                           int depth,
+                                           dav_if_header *if_hdr,
+                                           dav_lockdb *lockdb,
+                                           dav_bind *bind,
+                                           dav_bind *bind_to_ignore,
+                                           int flags,
+                                           dav_response **response,
+                                           dav_lock **lrl_to_refresh,
+                                           dav_lock **lrl_to_delete)
+{
+    apr_pool_t *pool = r->pool;
+    dav_walk_params params = { 0 };
+    dav_bind_lock_walker_ctx ctx = { 0 };
+    apr_hash_t *lr_res_map, *res_ltl_map;
+    dav_lock *bind_locks = NULL, *lr_i = NULL, *lr_i_next = NULL;
+    dav_lock *cur_locks = NULL, *parent_locks = NULL;
+    dav_error *err = NULL;
+
+    if (dav_get_resource_state(r, bind->new_resource) == DAV_RESOURCE_NULL)
+        goto check_parent_locks;
+
+    params.walk_type = DAV_WALKTYPE_NORMAL | DAV_WALKTYPE_LOCKNULL;
+    params.func = dav_bind_locks_validate_walker;
+    params.walk_ctx = &ctx;
+    params.pool = pool;
+    params.root = bind->new_resource;
+    params.lockdb = lockdb;
+
+    ctx.rec = r;
+    ctx.lock_hooks = lockdb->hooks;
+    ctx.lockdb = lockdb;
+    ctx.bind1 = bind;
+    ctx.bind2 = bind_to_ignore;
+    ctx.flags = flags;
+    ctx.uri_uuid = apr_hash_make(pool);
+    ctx.uuid_dinf_lock = apr_hash_make(pool);
+
+    ctx.lock_hooks->get_bind_locks(lockdb, bind, &bind_locks);
+
+    lr_res_map = apr_hash_make(pool);
+    res_ltl_map = apr_hash_make(pool);
+
+    /* Iterate over all the lockroots that are affected */
+    for (lr_i = bind_locks; lr_i; lr_i = lr_i_next) {
+        const char *corr_uri, *corr_uuid;
+        if (!lr_i->post_bind_uri || !*lr_i->post_bind_uri)
+            corr_uri = params.root->uri;
+        else
+            corr_uri= apr_pstrcat(pool, params.root->uri,
+                                  lr_i->post_bind_uri, NULL);
+
+        /* There may be many shared locks with this URI as their lockroot */
+        /* We maintain them in a chain as we have to check that one of them is provided */
+        dav_lock *ret_lr_group = apr_hash_get(lr_res_map, corr_uri, AHKS);
+        lr_i_next = lr_i->next;
+        lr_i->next = NULL;
+
+        if (ret_lr_group == NULL) {
+            /* Fetch the corresponding resource if there is no such bunch */
+            request_rec *new_req;
+            dav_resource *corr_res = NULL;
+            new_req = ap_sub_req_lookup_uri(corr_uri, ctx.rec, NULL);
+            dav_get_resource(new_req, 0, 0, &corr_res);
+            corr_uuid = corr_res->uuid;
+            apr_hash_set(ctx.uri_uuid, corr_uri, AHKS, corr_uuid);
+        } else corr_uuid = apr_hash_get(ctx.uri_uuid, corr_uri, AHKS);
+
+        if (corr_uuid) {
+            /* The corresponding uri exists at the target */
+            dav_lock *prev_lock = 
+              apr_hash_get(res_ltl_map, corr_uuid, AHKS);
+
+            if (check_for_lock_clashes(ctx.lock_hooks, prev_lock, lr_i))
+                return dav_new_error(pool, HTTP_CONFLICT, 0,
+                                     "Two binds would cause conflicts");
+
+            /* We want res_ltl_map to store the depth inf locks if available */
+            if (!prev_lock || (lr_i->depth > prev_lock->depth))
+                apr_hash_set(res_ltl_map, corr_uuid, AHKS, lr_i);
+
+            /* Add this lock to the retained lockroot group of this uri */
+            lr_i->next = ret_lr_group;
+            ret_lr_group = lr_i;
+            apr_hash_set(lr_res_map, corr_uri, AHKS, ret_lr_group);
+
+        } else {
+            /* The corr uri doesn't exist at target. Mark for deletion */
+            if (lrl_to_delete) {
+                lr_i->next = *lrl_to_delete;
+                *lrl_to_delete = lr_i;
+            }
+        }
+    }
+
+    /* check that all the locks that are being destroyed due to this action
+       are provided in the if_header */
+    err = dav_validate_ifheader_locks
+      (r, ctx.lock_hooks, if_hdr, lrl_to_delete ? *lrl_to_delete : NULL,
+       DAV_VALIDATE_ALL_LOCKS, NULL);
+    if (err) return err;
+
+    /* verify that one lock on uri being retained is provided
+       also create the list of all locks to be refreshed lrl_to_refresh */
+    apr_hash_index_t *hi;
+    for (hi = apr_hash_first(pool, lr_res_map); hi; hi = apr_hash_next(hi)) {
+        const char *corr_uri;
+        dav_lock *uri_locks, *iter;
+        apr_hash_this(hi, (const void **)&corr_uri, NULL, (void **)&uri_locks);
+
+        err = dav_validate_ifheader_locks(r, ctx.lock_hooks, if_hdr, 
+                                          uri_locks, DAV_VALIDATE_A_LOCK, NULL);
+        if (err) return err;
+        for (iter = uri_locks; iter->next; iter = iter->next);
+        if (lrl_to_refresh) {
+            iter->next = *lrl_to_refresh;
+            *lrl_to_refresh = uri_locks;
+        }
+    }
+
+    ctx.res_ltl_map = res_ltl_map;
+    err = ctx.lock_hooks->get_locks_not_through_binds
+      (lockdb, bind->collection, ctx.bind1, ctx.bind2, &ctx.locks_to_inherit);
+    filter_locks_of_depth(&ctx.locks_to_inherit, 0);
+
+    if (err) return err;
+
+    /* TODO: check that a lock on bind->old_resource
+       (depth inf if old_resource is a collection) is provided */
+    err = ctx.lock_hooks->get_locks(lockdb, bind->cur_resource,
+                                    DAV_GETLOCKS_COMPLETE, &cur_locks);
+    if (bind->cur_resource->collection)
+        filter_locks_of_depth(&cur_locks, 0);
+    err = dav_validate_ifheader_locks(r, ctx.lock_hooks, if_hdr,
+                                      cur_locks, DAV_VALIDATE_A_LOCK, NULL);
+
+    if (ctx.locks_to_inherit && (bind_locks == NULL || err != NULL)) {
+        err = dav_validate_ifheader_locks 
+          (r, ctx.lock_hooks, if_hdr, ctx.locks_to_inherit, DAV_VALIDATE_A_LOCK,
+           NULL);
+    }
+    if (err) return err;
+
+    err = (*bind->collection->hooks->walk)(&params, depth, response);
+    if (err) return err;
+
+ check_parent_locks:
+    /* TODO: verify that user has write content priv on all new descendants
+       (only in case of exclusive locks?) */
+    err = lockdb->hooks->get_locks(lockdb, bind->collection,
+                                   DAV_GETLOCKS_RESOLVED, &parent_locks);
+    if (err) return err;
+
+    if (dav_get_resource_state(r, bind->new_resource) == DAV_RESOURCE_NULL)
+        err = dav_validate_ifheader_locks
+          (r, lockdb->hooks, if_hdr, parent_locks, DAV_VALIDATE_A_LOCK, NULL);
+    else {
+        dav_lock *current_locks = NULL;
+        err = lockdb->hooks->get_locks(lockdb, bind->new_resource,
+                                       DAV_GETLOCKS_RESOLVED, &current_locks);
+        if (err) return err;
+        /* Check if a lock on the */
+        /* */
+        if (bind->new_resource->collection /* and has children? */)
+            filter_locks_of_depth(&current_locks, 0);
+
+        err = dav_validate_ifheader_locks
+          (r, lockdb->hooks, if_hdr, current_locks, DAV_VALIDATE_A_LOCK, NULL);
+        /* The logic might be faulty when new_resource is a collection */
+        /* TODO: filter depth 0 locks from current_locks? */
+        if (err) {
+            filter_locks_of_depth(&current_locks, 0);
+            err = dav_validate_ifheader_locks
+              (r, lockdb->hooks, if_hdr, parent_locks, DAV_VALIDATE_A_LOCK,
+               NULL);
+        }
+    }
+
+    return err;
+}
+
+DAV_DECLARE(dav_error *) dav_validate_unbind(request_rec *r,
+                                             dav_if_header *if_hdr,
+                                             dav_lockdb *lockdb,
+                                             dav_bind *bind,
+                                             int flags,
+                                             dav_response **p_response,
+                                             dav_lock **lrl_to_delete)
+{
+    const dav_hooks_locks *lock_hooks = DAV_GET_HOOKS_LOCKS(r);
+    dav_lock *parent_locks = NULL, *error_lock = NULL;
+    dav_error *err = NULL;
+
+    lock_hooks->get_bind_locks(lockdb, bind, lrl_to_delete);
+    err = dav_validate_ifheader_locks
+      (r, lock_hooks, if_hdr, *lrl_to_delete, DAV_VALIDATE_ALL_LOCKS, &error_lock);
+    if (err) {
+        if (strcmp(error_lock->lockroot, bind->cur_resource->uri) == 0)
+            return err;
+
+        dav_response *new_response;
+        new_response = apr_pcalloc(r->pool, sizeof(*new_response));
+        new_response->href = error_lock->lockroot;
+        new_response->status = err->status;
+        new_response->desc =
+            "An error occurred on another resource, preventing the "
+            "requested operation on this resource.";
+
+        new_response->next = *p_response;
+        *p_response = new_response;
+        return dav_new_error(r->pool, HTTP_MULTI_STATUS, 0, NULL);
+    }
+
+    /* TODO: verify that user has unlock privilege on all the resources being 
+       unlocked!! */
+    
+    /* verify that a lock on the parent is provided */
+    err = lock_hooks->get_locks(lockdb, bind->collection, DAV_GETLOCKS_RESOLVED,
+                                &parent_locks);
+    if (err) return err;
+
+    err = dav_validate_ifheader_locks
+      (r, lock_hooks, if_hdr, parent_locks, DAV_VALIDATE_A_LOCK, NULL);
+
+    
+    return err;
+}
+
+dav_error *dav_validate_new_lock(request_rec *r,
+                                 dav_if_header *if_hdr,
+                                 int depth,
+                                 dav_lockdb *lockdb,
+                                 dav_bind *bind,
+                                 int flags,
+                                 dav_response **p_response)
+{
+    apr_pool_t *pool = r->pool;
+    dav_walk_params params = { 0 };
+    dav_bind_lock_walker_ctx ctx = { 0 };
+    dav_error *err = NULL;
+
+    params.walk_type = DAV_WALKTYPE_NORMAL | DAV_WALKTYPE_LOCKNULL;
+    params.func = dav_bind_locks_validate_walker;
+    params.walk_ctx = &ctx;
+    params.pool = pool;
+    params.root = bind->cur_resource;
+    params.lockdb = lockdb;
+
+    ctx.wp = &params;
+    ctx.rec = r;
+    ctx.lock_hooks = lockdb->hooks;
+    ctx.lockdb = lockdb;
+    ctx.flags = flags;
+
+    err = ctx.lock_hooks->get_locks
+      (lockdb, bind->collection, DAV_GETLOCKS_COMPLETE, &ctx.locks_to_inherit);
+    if (err) return err;
+    if (flags & DAV_VALIDATE_PARENT) {
+        err = dav_validate_ifheader_locks
+          (r, lockdb->hooks, if_hdr, ctx.locks_to_inherit, DAV_VALIDATE_A_LOCK,
+           NULL);
+        if (err) return err;
+    }
+    filter_locks_of_depth(&ctx.locks_to_inherit, 0);
+
+    ctx.new_lock_info = apr_pcalloc(pool, sizeof(dav_lock));
+    ctx.new_lock_info->depth = depth;
+    ctx.new_lock_info->scope = 
+      (flags & DAV_LOCKSCOPE_SHARED) ? DAV_LOCKSCOPE_SHARED : DAV_LOCKSCOPE_EXCLUSIVE;
+
+    err = (*bind->collection->hooks->walk)(&params, depth, p_response);
+    if (err && err->status == HTTP_MULTI_STATUS) {
+        dav_response *new_response;
+        new_response = apr_pcalloc(r->pool, sizeof(*new_response));
+        new_response->href = bind->cur_resource->uri;
+        new_response->status = HTTP_FAILED_DEPENDENCY;
+        new_response->desc =
+            "An error occurred on another resource, preventing the "
+            "requested operation on this resource.";
+
+        new_response->next = *p_response;
+        *p_response = new_response;
+    }
+    return err;
+}
+
+void dav_parse_header_locktoken(request_rec *r,
+                                const dav_hooks_locks *lock_hooks,
+                                dav_locktoken **p_locktoken)
+{
+    dav_locktoken *locktoken = NULL;
+    const char *const_locktoken_txt;
+    char *locktoken_txt;
+    dav_error *err = NULL;
+
+    if ((const_locktoken_txt = apr_table_get(r->headers_in,
+                                             "Lock-Token")) == NULL) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "Unlock failed (%s):  "
+                      "No Lock-Token specified in header", r->filename);
+        return;
+    }
+
+    locktoken_txt = apr_pstrdup(r->pool, const_locktoken_txt);
+    if (locktoken_txt[0] != '<') {
+        /* ### should provide more specifics... */
+        return;
+    }
+    locktoken_txt++;
+
+    if (locktoken_txt[strlen(locktoken_txt) - 1] != '>') {
+        /* ### should provide more specifics... */
+        return;
+    }
+    locktoken_txt[strlen(locktoken_txt) - 1] = '\0';
+
+    err = (*lock_hooks->parse_locktoken)(r->pool, locktoken_txt, &locktoken);
+    if (err) return;
+
+    *p_locktoken = locktoken;
+}
+
+dav_error *dav_validate_unlock(request_rec *r,
+                               dav_if_header *if_hdr,
+                               dav_lockdb *lockdb,
+                               dav_bind *bind,
+                               int flags,
+                               dav_lock **p_lock_to_remove,
+                               dav_response **p_response)
+{
+    dav_resource *resource = bind->cur_resource;
+    dav_locktoken *locktoken = NULL;
+    dav_lock *locks = NULL, *lr_i = NULL;
+    dav_error *err = NULL;
+
+    dav_parse_header_locktoken(r, lockdb->hooks, &locktoken);
+    if (locktoken == NULL)
+        return dav_new_error(r->pool, HTTP_BAD_REQUEST, 0,
+                             "Invalid Lock-Token header");
+
+    err = lockdb->hooks->get_locks(lockdb, resource, DAV_GETLOCKS_COMPLETE,
+                                   &locks);
+    if (err) return err;
+
+    for (lr_i = locks; lr_i; lr_i = lr_i->next) {
+        if (0 == lockdb->hooks->compare_locktoken(lr_i->locktoken, locktoken))
+            break;
+    }
+    if (lr_i == NULL)
+        return dav_new_error(r->pool, HTTP_CONFLICT, 0,
+                             "The supplied token not found on Request-URI");
+    else if(!r->user || strcmp(r->user, lr_i->auth_user)) {
+        int allow = 0;
+        const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(r);
+        const dav_principal *prin = dav_principal_make_from_request(r);
+        allow = (*acl_hooks->is_allow)(prin, resource, DAV_PERMISSION_UNLOCK);
+        if (!allow)
+            return resource->err;
+    }
+
+    if (dav_get_resource_state(r, resource) == DAV_RESOURCE_LOCK_NULL) {
+        int last_locknull = 1;
+        for (; locks; locks = locks->next) {
+            if (locks == lr_i) continue;
+            if (strcmp(resource->uri, locks->lockroot) == 0)
+                last_locknull = 0;
+        }
+        if (last_locknull) {
+            dav_lock *parent_locks = NULL;
+            err = lockdb->hooks->get_locks
+              (lockdb, bind->collection, DAV_GETLOCKS_COMPLETE, &parent_locks);
+            if (err) return err;
+            err = dav_validate_ifheader_locks
+              (r, lockdb->hooks, if_hdr, parent_locks, DAV_VALIDATE_A_LOCK,
+               NULL);
+            if (err) return err;
+        }
+    }
+
+    *p_lock_to_remove = lr_i;
+    return NULL;
+}
+
 /* If-* header checking */
-static int dav_meets_conditions(request_rec *r, int resource_state)
+int dav_meets_conditions(request_rec *r, int resource_state)
 {
     const char *if_match, *if_none_match;
     int retVal;
@@ -1413,7 +1384,7 @@ static int dav_meets_conditions(request_rec *r, int resource_state)
     /* If-Match '*' fix. Resource existence not checked by ap_meets_conditions.
      * If-Match '*' request should succeed only if the resource exists. */
     if ((if_match = apr_table_get(r->headers_in, "If-Match")) != NULL) {
-        if (if_match[0] == '*' && resource_state != DAV_RESOURCE_EXISTS)
+        if(if_match[0] == '*' && resource_state != DAV_RESOURCE_EXISTS)
             return HTTP_PRECONDITION_FAILED;
     }
 
@@ -1421,273 +1392,230 @@ static int dav_meets_conditions(request_rec *r, int resource_state)
 
     /* If-None-Match '*' fix. If-None-Match '*' request should succeed 
      * if the resource does not exist. */
-    if (retVal == HTTP_PRECONDITION_FAILED) {
+    if(retVal == HTTP_PRECONDITION_FAILED) {
         /* Note. If if_none_match != NULL, if_none_match is the culprit.
          * Since, in presence of If-None-Match, 
          * other If-* headers are undefined. */
-        if ((if_none_match =
-            apr_table_get(r->headers_in, "If-None-Match")) != NULL) {
-            if (if_none_match[0] == '*'
-                && resource_state != DAV_RESOURCE_EXISTS) {
+        if((if_none_match = 
+                apr_table_get(r->headers_in, "If-None-Match")) != NULL) {
+            if(if_none_match[0] == '*' && resource_state != DAV_RESOURCE_EXISTS)
                 return OK;
-            }
         }
     }
 
     return retVal;
 }
 
-/*
-** dav_validate_request:  Validate if-headers (and check for locks) on:
-**    (1) r->filename @ depth;
-**    (2) Parent of r->filename if check_parent == 1
-**
-** The check of parent should be done when it is necessary to verify that
-** the parent collection will accept a new member (ie current resource
-** state is null).
-**
-** Return OK on successful validation.
-** On error, return appropriate HTTP_* code, and log error. If a multi-stat
-** error is necessary, response will point to it, else NULL.
-*/
-DAV_DECLARE(dav_error *) dav_validate_request(request_rec *r,
-                                              dav_resource *resource,
-                                              int depth,
-                                              dav_locktoken *locktoken,
-                                              dav_response **response,
-                                              int flags,
-                                              dav_lockdb *lockdb)
+dav_error *dav_validate_state_etag(request_rec *r,
+                                   dav_if_state_list *state_list,
+                                   dav_resource *res)
 {
-    dav_error *err;
-    int result;
-    dav_if_header *if_header;
-    int lock_db_opened_locally = 0;
-    const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
-    const dav_hooks_repository *repos_hooks = resource->hooks;
-    dav_buffer work_buf = { 0 };
-    dav_response *new_response;
-    int resource_state;
-    const char *etag;
-    int set_etag = 0;
+    const char *given_etag, *current_etag;
+    int mismatch;
+    const char *reason;
+    const char *etag = (*res->hooks->getetag)(res);
 
-#if DAV_DEBUG
-    if (depth && response == NULL) {
+    /* Do a weak entity comparison function as defined in
+     * RFC 2616 13.3.3.
+     */
+    if (state_list->etag[0] == 'W' &&
+        state_list->etag[1] == '/') {
+        given_etag = state_list->etag + 2;
+    }
+    else {
+        given_etag = state_list->etag;
+    }
+    if (etag[0] == 'W' &&
+        etag[1] == '/') {
+        current_etag = etag + 2;
+    }
+    else {
+        current_etag = etag;
+    }
+
+    mismatch = strcmp(given_etag, current_etag);
+
+    if (state_list->condition == DAV_IF_COND_NORMAL && mismatch) {
         /*
-        ** ### bleck. we can't return errors for other URIs unless we have
-        ** ### a "response" ptr.
+        ** The specified entity-tag does not match the
+        ** entity-tag on the resource. This state_list is
+        ** not going to match. Bust outta here.
         */
-        return dav_new_error(r->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
-                             "DESIGN ERROR: dav_validate_request called "
-                             "with depth>0, but no response ptr.");
+        reason =
+          "an entity-tag was specified, but the resource's "
+          "actual ETag does not match.";
     }
-#endif
-
-    if (response != NULL)
-        *response = NULL;
-
-    /* Set the ETag header required by dav_meets_conditions() */
-    etag = apr_table_get(r->headers_out, "ETag");
-    if (!etag) {
-        etag = (*resource->hooks->getetag)(resource);
-        if (etag && *etag) {
-            apr_table_set(r->headers_out, "ETag", etag);
-            set_etag = 1;
-        }
-    }
-    /* Do the standard checks for conditional requests using
-     * If-..-Since, If-Match etc */
-    resource_state = dav_get_resource_state(r, resource);
-    result = dav_meets_conditions(r, resource_state);
-    if (set_etag) {
+    else if (state_list->condition == DAV_IF_COND_NOT
+             && !mismatch) {
         /*
-         * If we have set an ETag to headers out above for
-         * dav_meets_conditions() revert this here as we do not want to set
-         * the ETag in responses to requests with methods where this might not
-         * be desired.
-         */
-        apr_table_unset(r->headers_out, "ETag");
+        ** The specified entity-tag DOES match the
+        ** entity-tag on the resource. This state_list is
+        ** not going to match. Bust outta here.
+        */
+        reason =
+          "an entity-tag was specified using the \"Not\" form, "
+          "but the resource's actual ETag matches the provided "
+          "entity-tag.";
+    } else return NULL;
+    return dav_new_error(r->pool, HTTP_PRECONDITION_FAILED, 0, reason);
+}
+
+dav_error *dav_validate_state_opaquelock(request_rec *r,
+                                         dav_if_state_list *state_list,
+                                         dav_lockdb *lockdb,
+                                         dav_resource *res)
+{
+    dav_lock *locks = NULL, *l_i = NULL;
+    dav_error *err = NULL;
+    int validated = 0;
+
+    err = lockdb->hooks->get_locks(lockdb, res, DAV_GETLOCKS_PARTIAL, &locks);
+    for (l_i = locks; l_i; l_i = l_i->next)
+        if (0 == lockdb->hooks->compare_locktoken
+            (state_list->locktoken, l_i->locktoken)) {
+            validated = 1;
+            break;
+        }
+
+    if (((state_list->condition == DAV_IF_COND_NORMAL) && !validated) ||
+        ((state_list->condition == DAV_IF_COND_NOT) && validated))
+        return dav_new_error(r->pool, HTTP_PRECONDITION_FAILED, 0,
+                             "Supplied Locktoken not found on resource");
+    return NULL;
+}
+
+dav_error *dav_validate_ifheader_lists(request_rec *r,
+                                       dav_if_header *ifhdr,
+                                       dav_lockdb *lockdb)
+{
+    dav_error *err = NULL;
+
+    for (; ifhdr && !err; ifhdr = ifhdr->next) {
+        request_rec *new_req = NULL;
+        dav_resource *res = NULL;
+        dav_if_state_list *state_i;
+        const char *uri = ifhdr->uri;
+
+        for(state_i = ifhdr->state; state_i && !err; state_i = state_i->next) {
+            if (res == NULL) {
+                if (!uri) {
+                    dav_get_resource(r, 0, 0, &res);
+                }
+                else {
+                    new_req = ap_sub_req_lookup_uri(uri, r, NULL);
+                    dav_get_resource(new_req, 0, 0, &res);
+                }
+            }
+
+            switch (state_i->type) {
+            case dav_if_etag:
+                err = dav_validate_state_etag
+                  (r, state_i, (res));
+                break;
+            case dav_if_opaquelock:
+                err = dav_validate_state_opaquelock(r, state_i, lockdb, res);
+                break;
+            case dav_if_unknown:
+                if (state_i->condition == DAV_IF_COND_NORMAL)
+                    err = dav_new_error(r->pool, HTTP_PRECONDITION_FAILED, 0,
+                                        "Unrecognized statelist");
+            }
+        }
+        if (err == NULL) {
+            while (ifhdr->next && (ifhdr->next->uri == ifhdr->uri))
+                ifhdr = ifhdr->next;
+        } else if (ifhdr->next && (ifhdr->next->uri == ifhdr->uri))
+            err = NULL;
     }
-    if (result != OK) {
-        return dav_new_error(r->pool, result, 0, NULL);
+    return err;
+}
+
+DAV_DECLARE(dav_error *) dav_validate_request(request_rec *r,
+                                              int depth,
+                                              dav_lockdb *lockdb,
+                                              dav_bind *bind,
+                                              dav_bind *unbind,
+                                              int flags,
+                                              int resource_state,
+                                              dav_response **response,
+                                              dav_lock **p_refresh_locks,
+                                              dav_lock **p_remove_locks)
+{
+    dav_if_header *if_hdr;
+    const dav_hooks_repository *repos_hooks = NULL;
+    const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
+    int lock_db_opened_locally = 0;
+    dav_error *err = NULL;
+
+    if (response != NULL) *response = NULL;
+
+    if (p_refresh_locks) *p_refresh_locks = NULL;
+    if (p_remove_locks) *p_remove_locks = NULL;
+
+    if (bind && bind->cur_resource && !bind->collection) {
+        repos_hooks = bind->cur_resource->hooks;
+        err = (*repos_hooks->get_parent_resource)(bind->cur_resource, 
+                                                  &bind->collection);
+        if (err) return err;
+        bind->bind_name = basename(bind->cur_resource->uri);
+    }
+
+    if (unbind && unbind->cur_resource && !unbind->collection) {
+        if (!repos_hooks)
+            repos_hooks = unbind->cur_resource->hooks;
+        err = (*repos_hooks->get_parent_resource)(unbind->cur_resource, 
+                                                  &unbind->collection);
+        if (err) return err;
+        unbind->bind_name = basename(unbind->cur_resource->uri);
     }
 
     /* always parse (and later process) the If: header */
-    if ((err = dav_process_if_header(r, &if_header)) != NULL) {
+    if ((err = dav_process_if_header(r, &if_hdr)) != NULL) {
         /* ### maybe add higher-level description */
         return err;
     }
 
-    /* If a locktoken was specified, create a dummy if_header with which
-     * to validate resources.  In the interim, figure out why DAV uses
-     * locktokens in an if-header without a Lock-Token header to refresh
-     * locks, but a Lock-Token header without an if-header to remove them.
-     */
-    if (locktoken != NULL) {
-        dav_if_header *ifhdr_new;
-
-        ifhdr_new = apr_pcalloc(r->pool, sizeof(*ifhdr_new));
-        ifhdr_new->uri = resource->uri;
-        ifhdr_new->uri_len = strlen(resource->uri);
-        ifhdr_new->dummy_header = 1;
-
-        ifhdr_new->state = apr_pcalloc(r->pool, sizeof(*ifhdr_new->state));
-        ifhdr_new->state->type = dav_if_opaquelock;
-        ifhdr_new->state->condition = DAV_IF_COND_NORMAL;
-        ifhdr_new->state->locktoken = locktoken;
-
-        ifhdr_new->next = if_header;
-        if_header = ifhdr_new;
-    }
-
-    /*
-    ** If necessary, open the lock database (read-only, lazily);
-    ** the validation process may need to retrieve or update lock info.
-    ** Otherwise, assume provided lockdb is valid and opened rw.
-    */
     if (lockdb == NULL) {
         if (locks_hooks != NULL) {
-            if ((err = (*locks_hooks->open_lockdb)(r, 0, 0, &lockdb)) != NULL) {
-                /* ### maybe insert higher-level comment */
-                return err;
-            }
+            err = (*locks_hooks->open_lockdb)(r, 0, 0, &lockdb);
+            if (err) return err;
             lock_db_opened_locally = 1;
         }
     }
 
-    /* (1) Validate the specified resource, at the specified depth */
-    if (resource->exists && depth > 0) {
-        dav_walker_ctx ctx = { { 0 } };
-        dav_response *multi_status;
+    /* Verify the remainder of ifheader */
+    err = dav_validate_ifheader_lists(r, if_hdr, lockdb);
+    if (err) return err;
 
-        ctx.w.walk_type = DAV_WALKTYPE_NORMAL;
-        ctx.w.func = dav_validate_walker;
-        ctx.w.walk_ctx = &ctx;
-        ctx.w.pool = r->pool;
-        ctx.w.root = resource;
-
-        ctx.if_header = if_header;
-        ctx.r = r;
-        ctx.flags = flags;
-
-        if (lockdb != NULL) {
-            ctx.w.lockdb = lockdb;
-            ctx.w.walk_type |= DAV_WALKTYPE_LOCKNULL;
-        }
-
-        err = (*repos_hooks->walk)(&ctx.w, DAV_INFINITY, &multi_status);
-        if (err == NULL) {
-            *response = multi_status;;
-        }
-        /* else: implies a 5xx status code occurred. */
-    }
-    else {
-        err = dav_validate_resource_state(r->pool, resource, lockdb,
-                                          if_header, flags, &work_buf, r);
+    if (flags & DAV_VALIDATE_BIND) {
+        err = dav_validate_bind(r, depth, if_hdr, lockdb, bind, unbind, flags,
+                                response, p_refresh_locks, p_remove_locks);
+        if (err) goto error;
     }
 
-    /* (2) Validate the parent resource if requested */
-    if (err == NULL && (flags & DAV_VALIDATE_PARENT)) {
-        dav_resource *parent_resource;
-
-        err = (*repos_hooks->get_parent_resource)(resource, &parent_resource);
-
-        if (err == NULL && parent_resource == NULL) {
-            err = dav_new_error(r->pool, HTTP_FORBIDDEN, 0,
-                                "Cannot access parent of repository root.");
-        }
-        else if (err == NULL) {
-            err = dav_validate_resource_state(r->pool, parent_resource, lockdb,
-                                              if_header,
-                                              flags | DAV_VALIDATE_IS_PARENT,
-                                              &work_buf, r);
-
-            /*
-            ** This error occurred on the parent resource. This implies that
-            ** we have to create a multistatus response (to report the error
-            ** against a URI other than the Request-URI). "Convert" this error
-            ** into a multistatus response.
-            */
-            if (err != NULL) {
-                new_response = apr_pcalloc(r->pool, sizeof(*new_response));
-
-                new_response->href = parent_resource->uri;
-                new_response->status = err->status;
-                new_response->desc =
-                    "A validation error has occurred on the parent resource, "
-                    "preventing the operation on the resource specified by "
-                    "the Request-URI.";
-                if (err->desc != NULL) {
-                    new_response->desc = apr_pstrcat(r->pool,
-                                                    new_response->desc,
-                                                    " The error was: ",
-                                                    err->desc, NULL);
-                }
-
-                /* assert: DAV_VALIDATE_PARENT implies response != NULL */
-                new_response->next = *response;
-                *response = new_response;
-
-                err = NULL;
-            }
-        }
+    if (flags & DAV_VALIDATE_UNBIND) {
+        dav_lock *l_i = *p_remove_locks;
+        if (l_i) while(l_i->next) l_i = l_i->next;
+        err = dav_validate_unbind(r, if_hdr, lockdb, unbind, flags,
+                                  response, l_i ? &l_i->next : p_remove_locks);
+        if (err) goto error;
     }
 
+    if (flags & DAV_VALIDATE_NEW_LOCK) {
+        err = dav_validate_new_lock(r, if_hdr, depth, lockdb, bind, flags,
+                                    response);
+        if (err) goto error;
+    }
+
+    if (flags & DAV_VALIDATE_UNLOCK) {
+        err = dav_validate_unlock(r, if_hdr, lockdb, bind, flags,
+                                  p_remove_locks, response);
+        if (err) goto error;
+    }
+
+ error:
     if (lock_db_opened_locally)
         (*locks_hooks->close_lockdb)(lockdb);
-
-    /*
-    ** If we don't have a (serious) error, and we have multistatus responses,
-    ** then we need to construct an "error". This error will be the overall
-    ** status returned, and the multistatus responses will go into its body.
-    **
-    ** For certain methods, the overall error will be a 424. The default is
-    ** to construct a standard 207 response.
-    */
-    if (err == NULL && response != NULL && *response != NULL) {
-        apr_text *propstat = NULL;
-
-        if ((flags & DAV_VALIDATE_USE_424) != 0) {
-            /* manufacture a 424 error to hold the multistatus response(s) */
-            return dav_new_error(r->pool, HTTP_FAILED_DEPENDENCY, 0,
-                                 "An error occurred on another resource, "
-                                 "preventing the requested operation on "
-                                 "this resource.");
-        }
-
-        /*
-        ** Whatever caused the error, the Request-URI should have a 424
-        ** associated with it since we cannot complete the method.
-        **
-        ** For a LOCK operation, insert an empty DAV:lockdiscovery property.
-        ** For other methods, return a simple 424.
-        */
-        if ((flags & DAV_VALIDATE_ADD_LD) != 0) {
-            propstat = apr_pcalloc(r->pool, sizeof(*propstat));
-            propstat->text =
-                "<D:propstat>" DEBUG_CR
-                "<D:prop><D:lockdiscovery/></D:prop>" DEBUG_CR
-                "<D:status>HTTP/1.1 424 Failed Dependency</D:status>" DEBUG_CR
-                "</D:propstat>" DEBUG_CR;
-        }
-
-        /* create the 424 response */
-        new_response = apr_pcalloc(r->pool, sizeof(*new_response));
-        new_response->href = resource->uri;
-        new_response->status = HTTP_FAILED_DEPENDENCY;
-        new_response->propresult.propstats = propstat;
-        new_response->desc =
-            "An error occurred on another resource, preventing the "
-            "requested operation on this resource.";
-
-        new_response->next = *response;
-        *response = new_response;
-
-        /* manufacture a 207 error for the multistatus response(s) */
-        return dav_new_error(r->pool, HTTP_MULTI_STATUS, 0,
-                             "Error(s) occurred on resources during the "
-                             "validation process.");
-    }
-
     return err;
 }
 
@@ -1816,37 +1744,43 @@ static dav_error * dav_can_auto_checkout(
 
     *auto_checkout = 0;
 
+    if (*lockdb == NULL) {
+        const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
+
+        if (locks_hooks == NULL) {
+            return dav_new_error(r->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
+                                 "Auto-checkout is only enabled for locked resources, "
+                                 "but there is no lock provider.");
+        }
+
+        if ((err = (*locks_hooks->open_lockdb)(r, 0, 0, lockdb)) != NULL) {
+            return dav_push_error(r->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
+                                  "Cannot open lock database to determine "
+                                  "auto-versioning behavior.",
+                                  err);
+        }
+    }
+
+    if ((err = dav_lock_query(*lockdb, resource, &lock_list)) != NULL) {
+        return dav_push_error(r->pool,
+                              HTTP_INTERNAL_SERVER_ERROR, 0,
+                              "The locks could not be queried for "
+                              "determining auto-versioning behavior.",
+                              err);
+    }
+
     if (auto_version == DAV_AUTO_VERSION_ALWAYS) {
         *auto_checkout = 1;
     }
     else if (auto_version == DAV_AUTO_VERSION_LOCKED) {
-        if (*lockdb == NULL) {
-            const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
-
-            if (locks_hooks == NULL) {
-                return dav_new_error(r->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
-                                     "Auto-checkout is only enabled for locked resources, "
-                                     "but there is no lock provider.");
-            }
-
-            if ((err = (*locks_hooks->open_lockdb)(r, 0, 0, lockdb)) != NULL) {
-                return dav_push_error(r->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
-                                      "Cannot open lock database to determine "
-                                      "auto-versioning behavior.",
-                                      err);
-            }
-        }
-
-        if ((err = dav_lock_query(*lockdb, resource, &lock_list)) != NULL) {
-            return dav_push_error(r->pool,
-                                  HTTP_INTERNAL_SERVER_ERROR, 0,
-                                  "The locks could not be queried for "
-                                  "determining auto-versioning behavior.",
-                                  err);
-        }
-
         if (lock_list != NULL)
             *auto_checkout = 1;
+    }
+
+    if (lock_list != NULL) {
+        const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
+        if (vsn_hooks != NULL)
+            vsn_hooks->set_checkin_on_unlock(resource);
     }
 
     return NULL;
@@ -1862,30 +1796,33 @@ DAV_DECLARE(dav_error *) dav_auto_checkout(
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     dav_lockdb *lockdb = NULL;
     dav_error *err = NULL;
+    dav_resource *parent;
 
     /* Initialize results */
     memset(av_info, 0, sizeof(*av_info));
+
+    if ((err = (*resource->hooks->get_parent_resource)(resource,
+                                                           &parent)) != NULL)
+	 goto done;
+
+    if (parent == NULL || !parent->exists) {
+	 err = dav_new_error(r->pool, HTTP_CONFLICT, 0,
+			     apr_psprintf(r->pool,
+					  "Missing one or more intermediate "
+					  "collections. Cannot create resource %s.",
+					  ap_escape_html(r->pool, resource->uri)));
+	 goto done;
+    }
+
 
     /* if no versioning provider, just return */
     if (vsn_hooks == NULL)
         return NULL;
 
     /* check parent resource if requested or if resource must be created */
-    if (!resource->exists || parent_only) {
-        dav_resource *parent;
+    if (parent_only || (!resource->exists && ((*vsn_hooks->auto_versionable)(resource) == DAV_AUTO_VERSION_ALWAYS))) {
 
-        if ((err = (*resource->hooks->get_parent_resource)(resource,
-                                                           &parent)) != NULL)
-            goto done;
 
-        if (parent == NULL || !parent->exists) {
-            err = dav_new_error(r->pool, HTTP_CONFLICT, 0,
-                                apr_psprintf(r->pool,
-                                            "Missing one or more intermediate "
-                                            "collections. Cannot create resource %s.",
-                                            ap_escape_html(r->pool, resource->uri)));
-            goto done;
-        }
 
         av_info->parent_resource = parent;
 
@@ -2105,4 +2042,10 @@ DAV_DECLARE(dav_error *) dav_auto_checkin(
     }
 
     return NULL;
+}
+
+const char *dav_get_full_url(request_rec *r, const char *uri)
+{
+    const char *host = apr_table_get(r->headers_in, "Host");
+    return apr_psprintf(r->pool, "http://%s%s", host, uri);
 }

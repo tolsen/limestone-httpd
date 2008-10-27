@@ -2380,7 +2380,8 @@ static void add_cookie(request_rec *r, char *s)
             cookie = apr_pstrcat(rmain->pool,
                                  var, "=", val,
                                  "; path=", path ? path : "/",
-                                 "; domain=", domain,
+                                 *domain != '_' ? "; domain=" : "",
+                                 *domain != '_' ? domain : "",
                                  expires ? "; expires=" : NULL,
                                  expires ? exp_time : NULL,
                                  NULL);

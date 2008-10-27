@@ -66,6 +66,10 @@
 /* used to denote that mod_dav will be handling this request */
 #define DAV_HANDLER_NAME "dav-handler"
 
+/* dav_lookup_uri flags */
+#define MUST_BE_ABSOLUTE        1
+#define ALLOW_CROSS_DOMAIN      2
+
 enum {
     DAV_ENABLED_UNSET = 0,
     DAV_ENABLED_OFF,
@@ -77,9 +81,14 @@ typedef struct {
     const char *provider_name;
     const dav_provider *provider;
     const char *dir;
+    const char *rootpath;
     int locktimeout;
     int allow_depthinfinity;
-
+    int allow_unauthenticated_access;
+    const char *rewrite_cond_lhs;
+    const char *rewrite_cond_rhs;
+    const char *rewrite_rule_lhs;
+    const char *rewrite_rule_rhs;
 } dav_dir_conf;
 
 /* per-server configuration */
@@ -95,28 +104,76 @@ typedef struct {
 /* forward-declare for use in configuration lookup */
 extern module DAV_DECLARE_DATA dav_module;
 
+/* Principal Methods */
+dav_principal *dav_principal_make_from_request(request_rec *r)
+{
+    dav_principal *principal;
+    const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(r);
+
+    principal = (*acl_hooks->get_prin_by_name)(r, r->user);
+    return principal;
+}
+
+dav_principal* dav_principal_make_from_url(request_rec *r, 
+                                           const char *url)
+{
+    dav_principal *principal = NULL;
+    dav_resource *resource = NULL;
+
+    if (url) {
+        dav_get_resource_from_uri(apr_pstrcat(r->pool, url, "?no_rewrite", NULL),
+                                  r, ALLOW_CROSS_DOMAIN, NULL, &resource);
+        if(resource && resource->exists && resource->type == DAV_RESOURCE_TYPE_PRINCIPAL ) {
+            principal = apr_pcalloc(r->pool, sizeof(dav_principal));
+            principal->type = PRINCIPAL_HREF;
+            principal->resource = resource;
+        }
+    }
+
+    return principal;
+}
+
+int dav_get_permission_denied_status(request_rec *r) {
+    dav_principal *prin = dav_principal_make_from_request(r);
+    if(prin->type == PRINCIPAL_UNAUTHENTICATED) {
+        if (!apr_table_get(r->notes, "mod_dav_unauth_set_headers")) {
+            apr_table_setn(r->notes, "mod_dav_unauth_set_headers", (char *)1);
+            /* Set the authentication headers. If needed, issue the client a fresh challenge */
+            return ap_run_check_user_id(r);
+        }
+        return HTTP_UNAUTHORIZED;
+    } else
+        return HTTP_FORBIDDEN;
+}
+
 /* DAV methods */
+static dav_all_methods *dav_registered_methods;
+
 enum {
     DAV_M_BIND = 0,
+    DAV_M_UNBIND,
+    DAV_M_REBIND,
     DAV_M_SEARCH,
+    DAV_M_ACL,
     DAV_M_LAST
 };
 static int dav_methods[DAV_M_LAST];
 
+struct _dav_request {
+    request_rec *request;
+    dav_transaction *trans;
+    dav_resource *resource;
+};
 
-static int dav_init_handler(apr_pool_t *p, apr_pool_t *plog, apr_pool_t *ptemp,
-                             server_rec *s)
-{
-    /* DBG0("dav_init_handler"); */
+struct _dav_method {
+    int (*handle)(dav_request *dav_r);
+    int (*is_allow)(dav_request *dav_r, const dav_hooks_acl *acl_hooks, const dav_principal *principal);
+    int is_transactional;
+};
 
-    /* Register DAV methods */
-    dav_methods[DAV_M_BIND] = ap_method_register(p, "BIND");
-    dav_methods[DAV_M_SEARCH] = ap_method_register(p, "SEARCH");
-
-    ap_add_version_component(p, "DAV/2");
-
-    return OK;
-}
+struct _dav_all_methods {
+    apr_hash_t *method_hash;
+};
 
 static void *dav_create_server_config(apr_pool_t *p, server_rec *s)
 {
@@ -162,6 +219,7 @@ static void *dav_create_dir_config(apr_pool_t *p, char *dir)
             d[l - 1] = '\0';
         conf->dir = d;
     }
+    conf->allow_unauthenticated_access = -1;
 
     return conf;
 }
@@ -193,9 +251,19 @@ static void *dav_merge_dir_config(apr_pool_t *p, void *base, void *overrides)
 
     newconf->locktimeout = DAV_INHERIT_VALUE(parent, child, locktimeout);
     newconf->dir = DAV_INHERIT_VALUE(parent, child, dir);
+    newconf->rootpath = DAV_INHERIT_VALUE(child, parent, rootpath);
     newconf->allow_depthinfinity = DAV_INHERIT_VALUE(parent, child,
                                                      allow_depthinfinity);
-
+    newconf->allow_unauthenticated_access = child->allow_unauthenticated_access == -1 ?
+      parent->allow_unauthenticated_access : child->allow_unauthenticated_access;
+    newconf->rewrite_cond_lhs = DAV_INHERIT_VALUE(parent, child,
+                                                     rewrite_cond_lhs);
+    newconf->rewrite_cond_rhs = DAV_INHERIT_VALUE(parent, child,
+                                                     rewrite_cond_rhs);
+    newconf->rewrite_rule_lhs = DAV_INHERIT_VALUE(parent, child,
+                                                     rewrite_rule_lhs);
+    newconf->rewrite_rule_rhs = DAV_INHERIT_VALUE(parent, child,
+                                                     rewrite_rule_rhs);
     return newconf;
 }
 
@@ -210,6 +278,11 @@ static const dav_provider *dav_get_provider(request_rec *r)
     /* assert: conf->provider != NULL
        (checked when conf->provider_name is set) */
     return conf->provider;
+}
+
+DAV_DECLARE(const dav_hooks_repository *) dav_get_repos_hooks(request_rec *r)
+{
+    return dav_get_provider(r)->repos;
 }
 
 DAV_DECLARE(const dav_hooks_locks *) dav_get_lock_hooks(request_rec *r)
@@ -237,6 +310,42 @@ DAV_DECLARE(const dav_hooks_search *) dav_get_search_hooks(request_rec *r)
     return dav_get_provider(r)->search;
 }
 
+DAV_DECLARE(const dav_hooks_acl *) dav_get_acl_hooks(request_rec *r)
+{
+    return dav_get_provider(r)->acl;
+}
+
+DAV_DECLARE(const dav_hooks_transaction *) dav_get_transaction_hooks(request_rec *r)
+{
+    return dav_get_provider(r)->transaction;
+}
+
+static dav_error *dav_transaction_start(request_rec *r, dav_transaction **t)
+{
+    const dav_hooks_transaction *transaction_hooks = DAV_GET_HOOKS_TRANSACTION(r);
+    dav_error *err = NULL;
+
+    if(transaction_hooks)
+        err = transaction_hooks->start(r, t);
+
+    if(!err) 
+        (*t)->state = DAV_TRANSACTION_STATE_STARTED;
+
+    return err;
+}
+
+static dav_error *dav_transaction_end(request_rec *r, dav_transaction *t)
+{
+    const dav_hooks_transaction *transaction_hooks = DAV_GET_HOOKS_TRANSACTION(r);
+    dav_error *err = NULL;
+
+    if(t && t->state == DAV_TRANSACTION_STATE_STARTED) {
+        err = transaction_hooks->end(t);
+        t->state = DAV_TRANSACTION_STATE_ENDED;
+    }
+    return err;
+}
+
 /*
  * Command handler for the DAV directive, which is TAKE1.
  */
@@ -256,6 +365,8 @@ static const char *dav_cmd_dav(cmd_parms *cmd, void *config, const char *arg1)
     }
 
     if (conf->provider_name != NULL) {
+        conf->rootpath = conf->dir;
+
         /* lookup and cache the actual provider now */
         conf->provider = dav_lookup_provider(conf->provider_name);
 
@@ -299,6 +410,44 @@ static const char *dav_cmd_davmintimeout(cmd_parms *cmd, void *config,
         return "DAVMinTimeout requires a non-negative integer.";
 
     return NULL;
+}
+
+static const char *dav_cmd_davresponserewritecond(cmd_parms *cmd, void *config,
+                                                  const char *lhs, const char *rhs)
+{
+    dav_dir_conf *conf = (dav_dir_conf *)config;
+
+    conf->rewrite_cond_lhs = lhs;
+    conf->rewrite_cond_rhs = rhs;
+
+    return NULL;
+}
+
+static const char *dav_cmd_davresponserewriterule(cmd_parms *cmd, void *config,
+                                                  const char *lhs, const char *rhs)
+{
+    dav_dir_conf *conf = (dav_dir_conf *)config;
+
+    conf->rewrite_rule_lhs = lhs;
+    conf->rewrite_rule_rhs = rhs;
+
+    return NULL;
+}
+
+static void expect_100_fixups(request_rec *r)
+{
+    /* According to RFC 2616 Sec 4.4, 
+     * request bodies MUST be denoted by either CL or TE.
+     * unset the CL/TE headers so that input filters do not wait for body */
+    apr_table_unset(r->headers_in, "Content-Length");
+    apr_table_unset(r->headers_in, "Transfer-Encoding");
+
+    /* We need to flush the error response 
+     * before the input filters send back 100 Continue. */
+    ap_rflush(r);
+
+    /* Signal end of response */
+    ap_finalize_request_protocol(r);
 }
 
 /*
@@ -348,9 +497,6 @@ static int dav_error_response_tag(request_rec *r,
 {
     r->status = err->status;
 
-    /* ### I really don't think this is needed; gotta test */
-    r->status_line = ap_get_status_line(err->status);
-
     ap_set_content_type(r, DAV_XML_CONTENT_TYPE);
 
     ap_rputs(DAV_XML_HEADER DEBUG_CR
@@ -364,13 +510,13 @@ static int dav_error_response_tag(request_rec *r,
     if (err->namespace != NULL) {
         ap_rprintf(r,
                    " xmlns:C=\"%s\">" DEBUG_CR
-                   "<C:%s/>" DEBUG_CR,
-                   err->namespace, err->tagname);
+                   "<C:%s>%s</C:%s>" DEBUG_CR,
+                   err->namespace, err->tagname, err->content, err->tagname);
     }
     else {
         ap_rprintf(r,
                    ">" DEBUG_CR
-                   "<D:%s/>" DEBUG_CR, err->tagname);
+                   "<D:%s>%s</D:%s>" DEBUG_CR, err->tagname,err->content, err->tagname);
     }
 
     /* here's our mod_dav specific tag: */
@@ -415,6 +561,37 @@ static const char *dav_xml_escape_uri(apr_pool_t *p, const char *uri)
     return apr_xml_quote_string(p, e_uri, 0);
 }
 
+/*
+ * apply response uri rewrites, escape the uri, construct the href tags
+ */
+const char *dav_get_response_href(request_rec *r, const char *uri)
+{
+    dav_dir_conf *conf = ap_get_module_config(r->per_dir_config, &dav_module);
+    const char *host = apr_table_get(r->headers_in, "Host");
+    ap_regex_t *cond_regex, *rule_regex;
+    apr_size_t nmatch = AP_MAX_REG_MATCH;
+    ap_regmatch_t pmatch[AP_MAX_REG_MATCH];
+    char *result_uri = apr_pstrdup(r->pool, uri);
+    const dav_hooks_repository *repos_hooks = dav_get_repos_hooks(r);
+
+    /* check rewrite condition, we only support Host for now */
+    if(!apr_table_get(r->subprocess_env, "no-response-rewrite") &&
+       !apr_strnatcasecmp(conf->rewrite_cond_lhs, "Host")) {
+        cond_regex = ap_pregcomp(r->pool, conf->rewrite_cond_rhs, 0);
+        if(!ap_regexec(cond_regex, host, nmatch, pmatch, 0)) {
+            /* condition matched, apply the rule */
+            rule_regex = ap_pregcomp(r->pool, conf->rewrite_rule_lhs, 0);
+            if(!ap_regexec(rule_regex, uri, nmatch, pmatch, 0)) {
+                /* uri matches the rule lhs, rewrite uri to rhs */
+                result_uri = ap_pregsub(r->pool, conf->rewrite_rule_rhs, uri, nmatch, pmatch);
+            }
+            ap_pregfree(r->pool, rule_regex);
+        }
+        ap_pregfree(r->pool, cond_regex);
+    }
+
+    return repos_hooks->response_href_transform(r, result_uri);
+} 
 
 /* Write a complete RESPONSE object out as a <DAV:repsonse> xml
    element.  Data is sent into brigade BB, which is auto-flushed into
@@ -539,6 +716,7 @@ static void dav_send_multistatus(request_rec *r, int status,
 
     for (; first != NULL; first = first->next) {
       apr_pool_clear(subpool);
+      first->href = dav_get_response_href(r, first->href);
       dav_send_one_response(first, bb, r->output_filters, subpool);
     }
     apr_pool_destroy(subpool);
@@ -635,8 +813,10 @@ static int dav_created(request_rec *r, const char *locn, const char *what,
     /* Per HTTP/1.1, S10.2.2: add a Location header to contain the
      * URI that was created. */
 
-    /* Convert locn to an absolute URI, and return in Location header */
+    /* Convert locn to an absolute URI, and return in Location header
+       Disable setting Location header because IE uses it to redirect when it shouldn't
     apr_table_setn(r->headers_out, "Location", ap_construct_url(r->pool, locn, r));
+    */
 
     /* ### insert an ETag header? see HTTP/1.1 S10.2.2 */
 
@@ -705,8 +885,8 @@ static int dav_get_overwrite(request_rec *r)
  * the resource identified by the DAV:checked-in property of the resource
  * identified by the Request-URI.
  */
-static dav_error *dav_get_resource(request_rec *r, int label_allowed,
-                                   int use_checked_in, dav_resource **res_p)
+DAV_DECLARE(dav_error) *dav_get_resource(request_rec *r, int label_allowed,
+                                         int use_checked_in, dav_resource **res_p)
 {
     dav_dir_conf *conf;
     const char *label = NULL;
@@ -721,7 +901,7 @@ static dav_error *dav_get_resource(request_rec *r, int label_allowed,
     /* assert: conf->provider != NULL */
 
     /* resolve the resource */
-    err = (*conf->provider->repos->get_resource)(r, conf->dir,
+    err = (*conf->provider->repos->get_resource)(r, conf->rootpath,
                                                  label, use_checked_in,
                                                  res_p);
     if (err != NULL) {
@@ -808,25 +988,88 @@ static int dav_parse_range(request_rec *r,
     return 1;
 }
 
-/* handle the GET method */
-static int dav_method_get(request_rec *r)
+int dav_handle_davmount(request_rec *r)
 {
-    dav_resource *resource;
-    dav_error *err;
-    int status;
+    /* set-up response headers */
+    r->status = HTTP_OK;
+    r->status_line = ap_get_status_line(HTTP_OK);
+    ap_set_content_type(r, DAV_MOUNT_CONTENT_TYPE);
+
+    /* since we are reporting dm:username, disallow public caching */
+    apr_table_setn(r->headers_out, "Cache-Control", "private");
+
+    /* now send the xml body */
+
+    if (!strcmp(r->user, "unauthenticated")) {
+        /* dont send username element for unauthenticated user */
+        ap_rprintf(r, 
+                DAV_XML_HEADER DEBUG_CR
+                "<dm:mount xmlns:dm=" DAV_MOUNT_XMLNS ">" DEBUG_CR
+                "  <dm:url>%s</dm:url>" DEBUG_CR
+                "</dm:mount>" DEBUG_CR,
+                dav_get_full_url(r, dav_get_response_href(r, r->uri)));
+    }
+    else {
+        ap_rprintf(r, 
+                DAV_XML_HEADER DEBUG_CR
+                "<dm:mount xmlns:dm=" DAV_MOUNT_XMLNS ">" DEBUG_CR
+                "  <dm:url>%s</dm:url>" DEBUG_CR
+                "  <dm:username>%s</dm:username>" DEBUG_CR
+                "</dm:mount>" DEBUG_CR,
+                dav_get_full_url(r, dav_get_response_href(r, r->uri)), r->user);
+    }
+
+    return DONE;
+}
+
+int dav_query_handler(request_rec *r)
+{
+    /* currently we only handle action=davmount */
+    if(strcmp(r->args, DAV_MOUNT_QUERY) == 0) 
+        return dav_handle_davmount(r);
+
+    /* for unhandled queries, just return NOT_FOUND */
+    return DECLINED;
+}
+
+/* handle the GET method */
+static int dav_method_get(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
+    dav_error *err = NULL;
+
+    /* look for QUERY_ARGS that have been extracted from the request 
+     * and handle them appropriately */
+    if(r->args) {
+        int retVal = dav_query_handler(r);
+        if (retVal != DECLINED)
+            return retVal;
+    }
 
     /* This method should only be called when the resource is not
      * visible to Apache. We will fetch the resource from the repository,
      * then create a subrequest for Apache to handle.
      */
-    err = dav_get_resource(r, 1 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        err = dav_get_resource(r, 1 /* label_allowed */, 0/* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
         return HTTP_NOT_FOUND;
+    }
+
+    if (err) {
+        return dav_handle_err(r, err, NULL);
+    }
+
+    if (resource->type != DAV_RESOURCE_TYPE_REGULAR
+        && resource->type != DAV_RESOURCE_TYPE_VERSION) {
+        return HTTP_METHOD_NOT_ALLOWED;
     }
 
     /* set up the HTTP headers for the response */
@@ -835,12 +1078,6 @@ static int dav_method_get(request_rec *r)
                              "Unable to set up HTTP headers.",
                              err);
         return dav_handle_err(r, err, NULL);
-    }
-
-    /* Handle conditional requests */
-    status = ap_meets_conditions(r);
-    if (status) {
-      return status;
     }
 
     if (r->header_only) {
@@ -859,32 +1096,64 @@ static int dav_method_get(request_rec *r)
     return DONE;
 }
 
-/* validate resource/locks on POST, then pass to the default handler */
-static int dav_method_post(request_rec *r)
+static int dav_is_allow_method_get(dav_request *dav_r, 
+                                   const dav_hooks_acl *acl_hook, 
+                                   const dav_principal *principal)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
     dav_error *err;
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+    err = dav_get_resource(r, 1 /* label_allowed */, 0 /* use_checked_in */,
                            &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+			   
+    if (err == NULL)
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
 
-    /* Note: depth == 0. Implies no need for a multistatus response. */
-    if ((err = dav_validate_request(r, resource, 0, NULL, NULL,
-                                    DAV_VALIDATE_RESOURCE, NULL)) != NULL) {
-        /* ### add a higher-level description? */
-        return dav_handle_err(r, err, NULL);
+        if(resource->exists && acl_hook != NULL) 
+            retVal = (*acl_hook->is_allow)(principal, resource, 
+                                           DAV_PERMISSION_READ);
     }
+    
+    return retVal;
+}
+
+/* validate resource/locks on POST, then pass to the default handler */
+static int dav_method_post(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
+    dav_error *err;
+    int resource_state;
+
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0/* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
+
+    dav_bind bind = { 0 };
+    bind.cur_resource = bind.new_resource = resource;
+
+    resource_state = dav_get_resource_state(r, resource);
+    err = dav_validate_request
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
+       DAV_VALIDATE_IGNORE_TARGET_LOCKS, resource_state, NULL, NULL, NULL);
+    if (err) return dav_handle_err(r, err, NULL);
 
     return DECLINED;
 }
 
 /* handle the PUT method */
-static int dav_method_put(request_rec *r)
+static int dav_method_put(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     int resource_state;
     dav_auto_version_info av_info;
     const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
@@ -893,20 +1162,22 @@ static int dav_method_put(request_rec *r)
     dav_error *err2;
     dav_stream_mode mode;
     dav_stream *stream;
-    dav_response *multi_response;
     int has_range;
     apr_off_t range_start;
     apr_off_t range_end;
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0/* use_checked_in */,
+                &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     /* If not a file or collection resource, PUT not allowed */
     if (resource->type != DAV_RESOURCE_TYPE_REGULAR
-        && resource->type != DAV_RESOURCE_TYPE_WORKING) {
+        && resource->type != DAV_RESOURCE_TYPE_WORKING
+        && resource->type != DAV_RESOURCE_TYPE_PRINCIPAL) {
         body = apr_psprintf(r->pool,
                             "Cannot create resource %s with PUT.",
                             ap_escape_html(r->pool, r->uri));
@@ -915,29 +1186,19 @@ static int dav_method_put(request_rec *r)
 
     /* Cannot PUT a collection */
     if (resource->collection) {
-        return dav_error_response(r, HTTP_CONFLICT,
+        return dav_error_response(r, HTTP_METHOD_NOT_ALLOWED,
                                   "Cannot PUT to a collection.");
 
     }
 
     resource_state = dav_get_resource_state(r, resource);
 
-    /*
-     * Note: depth == 0 normally requires no multistatus response. However,
-     * if we pass DAV_VALIDATE_PARENT, then we could get an error on a URI
-     * other than the Request-URI, thereby requiring a multistatus.
-     *
-     * If the resource does not exist (DAV_RESOURCE_NULL), then we must
-     * check the resource *and* its parent. If the resource exists or is
-     * a locknull resource, then we check only the resource.
-     */
-    if ((err = dav_validate_request(r, resource, 0, NULL, &multi_response,
-                                    resource_state == DAV_RESOURCE_NULL ?
-                                    DAV_VALIDATE_PARENT :
-                                    DAV_VALIDATE_RESOURCE, NULL)) != NULL) {
-        /* ### add a higher-level description? */
-        return dav_handle_err(r, err, multi_response);
-    }
+    dav_bind bind = { 0 };
+    bind.cur_resource = bind.new_resource = resource;
+    err = dav_validate_request
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
+       DAV_VALIDATE_IGNORE_TARGET_LOCKS, resource_state, NULL, NULL, NULL);
+    if (err) return dav_handle_err(r, err, NULL);
 
     /* make sure the resource can be modified (if versioning repository) */
     if ((err = dav_auto_checkout(r, resource,
@@ -958,12 +1219,7 @@ static int dav_method_put(request_rec *r)
     /* Create the new file in the repository */
     if ((err = (*resource->hooks->open_stream)(resource, mode,
                                                &stream)) != NULL) {
-        /* ### assuming FORBIDDEN is probably not quite right... */
-        err = dav_push_error(r->pool, HTTP_FORBIDDEN, 0,
-                             apr_psprintf(r->pool,
-                                          "Unable to PUT new contents for %s.",
-                                          ap_escape_html(r->pool, r->uri)),
-                             err);
+        return dav_handle_err(r, err, NULL);
     }
 
     if (err == NULL && has_range) {
@@ -1092,6 +1348,19 @@ static int dav_method_put(request_rec *r)
             return dav_handle_err(r, err, NULL);
         }
     }
+    
+    /* set up the HTTP headers for the response */
+    if ((err = (*resource->hooks->set_headers)(r, resource)) != NULL) {
+        err = dav_push_error(r->pool, err->status, 0,
+                             "Unable to set up HTTP headers.",
+                             err);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
 
     /* NOTE: WebDAV spec, S8.7.1 states properties should be unaffected */
 
@@ -1099,6 +1368,59 @@ static int dav_method_put(request_rec *r)
     return dav_created(r, NULL, "Resource", resource_state == DAV_RESOURCE_EXISTS);
 }
 
+static int dav_is_allow_method_put(dav_request *dav_r, 
+                                   const dav_hooks_acl *acl_hook, 
+                                   const dav_principal *principal)
+{
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err;
+
+    /* Ask repository module to resolve the resource */
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+    if (err != NULL)
+        return retVal;
+
+    /* Set the resolved resource in context, so that it can be reused */
+    dav_r->resource = resource;
+
+    /* If not a file or collection resource, PUT not allowed */
+    if (resource->type != DAV_RESOURCE_TYPE_REGULAR
+        && resource->type != DAV_RESOURCE_TYPE_WORKING
+        && resource->type != DAV_RESOURCE_TYPE_PRINCIPAL)
+        return retVal;
+
+    /* Cannot PUT a collection */
+    if (resource->collection)
+        return retVal;
+
+    if (acl_hook != NULL)
+    {
+        if(dav_get_resource_state(r, resource) == DAV_RESOURCE_NULL) {
+            const dav_hooks_repository *repos_hooks = resource->hooks;
+            dav_resource *parent_resource = NULL;
+
+            err = (*repos_hooks->get_parent_resource)(resource, 
+                                                      &parent_resource);
+
+            if (err == NULL && parent_resource && parent_resource->exists ) {
+                retVal = (*acl_hook->is_allow)(principal, parent_resource, 
+                                               DAV_PERMISSION_BIND);
+
+                /* percolate the need-privileges error tag */
+                if(!retVal) resource->err = parent_resource->err; 
+            }
+        }
+        else
+            retVal = (*acl_hook->is_allow)(principal, resource, 
+                                           DAV_PERMISSION_WRITE_CONTENT);
+      
+    }
+    
+    return retVal;	
+}
 
 /* Use POOL to temporarily construct a dav_response object (from WRES
    STATUS, and PROPSTATS) and stream it via WRES's ctx->brigade. */
@@ -1110,7 +1432,7 @@ static void dav_stream_response(dav_walk_resource *wres,
     dav_response resp = { 0 };
     dav_walker_ctx *ctx = wres->walk_ctx;
 
-    resp.href = wres->resource->uri;
+    resp.href = dav_get_response_href(ctx->r, wres->resource->uri);
     resp.status = status;
     if (propstats) {
         resp.propresult = *propstats;
@@ -1140,26 +1462,32 @@ DAV_DECLARE(void) dav_add_response(dav_walk_resource *wres,
 
 
 /* handle the DELETE method */
-static int dav_method_delete(request_rec *r)
+static int dav_method_delete(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
+    dav_lockdb *lockdb = NULL;
     dav_auto_version_info av_info;
-    dav_error *err;
-    dav_error *err2;
+    dav_error *err = NULL;
+    dav_error *err2 = NULL;
     dav_response *multi_response;
     int result;
     int depth;
+    int resource_state;
 
     /* We don't use the request body right now, so torch it. */
     if ((result = ap_discard_request_body(r)) != OK) {
         return result;
     }
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
+
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
         return HTTP_NOT_FOUND;
@@ -1184,26 +1512,19 @@ static int dav_method_delete(request_rec *r)
         return HTTP_BAD_REQUEST;
     }
 
-    /*
-    ** If any resources fail the lock/If: conditions, then we must fail
-    ** the delete. Each of the failing resources will be listed within
-    ** a DAV:multistatus body, wrapped into a 424 response.
-    **
-    ** Note that a failure on the resource itself does not generate a
-    ** multistatus response -- only internal members/collections.
-    */
-    if ((err = dav_validate_request(r, resource, depth, NULL,
-                                    &multi_response,
-                                    DAV_VALIDATE_PARENT
-                                    | DAV_VALIDATE_USE_424, NULL)) != NULL) {
-        err = dav_push_error(r->pool, err->status, 0,
-                             apr_psprintf(r->pool,
-                                          "Could not DELETE %s due to a failed "
-                                          "precondition (e.g. locks).",
-                                          ap_escape_html(r->pool, r->uri)),
-                             err);
-        return dav_handle_err(r, err, multi_response);
+    if ((err = dav_open_lockdb(r, 0, &lockdb)) != NULL) {
+        /* ### add a higher-level description? */
+        return dav_handle_err(r, err, NULL);
     }
+
+    dav_lock *lrl_to_delete = NULL, *li = NULL;
+    dav_bind unbind = { 0 };
+    unbind.cur_resource = resource;
+    resource_state = dav_get_resource_state(r, resource);
+    err = dav_validate_request
+      (r, DAV_INFINITY, lockdb, NULL, &unbind, DAV_VALIDATE_UNBIND, resource_state,
+       &multi_response, NULL, &lrl_to_delete);
+    if (err) return dav_handle_err(r, err, multi_response);
 
     /* ### RFC 2518 s. 8.10.5 says to remove _all_ locks, not just those
      *     locked by the token(s) in the if_header.
@@ -1222,6 +1543,13 @@ static int dav_method_delete(request_rec *r)
     /* try to remove the resource */
     err = (*resource->hooks->remove_resource)(resource, &multi_response);
 
+    if (!err) 
+        for (li = lrl_to_delete; li && !err; li = li->next)
+            err = (*lockdb->hooks->remove_lock)(lockdb, NULL, li->locktoken);
+
+    if (lockdb != NULL)
+        (*lockdb->hooks->close_lockdb)(lockdb);
+        
     /* restore writability of parent back to what it was */
     err2 = dav_auto_checkin(r, NULL, err != NULL /* undo if error */,
                             0 /*unlock*/, &av_info);
@@ -1245,404 +1573,58 @@ static int dav_method_delete(request_rec *r)
         dav_log_err(r, err, APLOG_WARNING);
     }
 
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
     /* ### HTTP_NO_CONTENT if no body, HTTP_OK if there is a body (some day) */
 
     /* Apache will supply a default error for this. */
     return HTTP_NO_CONTENT;
 }
 
-/* generate DAV:supported-method-set OPTIONS response */
-static dav_error *dav_gen_supported_methods(request_rec *r,
-                                            const apr_xml_elem *elem,
-                                            const apr_table_t *methods,
-                                            apr_text_header *body)
+static int dav_is_allow_method_delete(dav_request *dav_r, 
+                                      const dav_hooks_acl *acl_hook, 
+                                      const dav_principal *principal)
 {
-    const apr_array_header_t *arr;
-    const apr_table_entry_t *elts;
-    apr_xml_elem *child;
-    apr_xml_attr *attr;
-    char *s;
-    int i;
-
-    apr_text_append(r->pool, body, "<D:supported-method-set>" DEBUG_CR);
-
-    if (elem->first_child == NULL) {
-        /* show all supported methods */
-        arr = apr_table_elts(methods);
-        elts = (const apr_table_entry_t *)arr->elts;
-
-        for (i = 0; i < arr->nelts; ++i) {
-            if (elts[i].key == NULL)
-                continue;
-
-            s = apr_psprintf(r->pool,
-                             "<D:supported-method D:name=\"%s\"/>"
-                             DEBUG_CR,
-                             elts[i].key);
-            apr_text_append(r->pool, body, s);
-        }
-    }
-    else {
-        /* check for support of specific methods */
-        for (child = elem->first_child; child != NULL; child = child->next) {
-            if (child->ns == APR_XML_NS_DAV_ID
-                && strcmp(child->name, "supported-method") == 0) {
-                const char *name = NULL;
-
-                /* go through attributes to find method name */
-                for (attr = child->attr; attr != NULL; attr = attr->next) {
-                    if (attr->ns == APR_XML_NS_DAV_ID
-                        && strcmp(attr->name, "name") == 0)
-                            name = attr->value;
-                }
-
-                if (name == NULL) {
-                    return dav_new_error(r->pool, HTTP_BAD_REQUEST, 0,
-                                         "A DAV:supported-method element "
-                                         "does not have a \"name\" attribute");
-                }
-
-                /* see if method is supported */
-                if (apr_table_get(methods, name) != NULL) {
-                    s = apr_psprintf(r->pool,
-                                     "<D:supported-method D:name=\"%s\"/>"
-                                     DEBUG_CR,
-                                     name);
-                    apr_text_append(r->pool, body, s);
-                }
-            }
-        }
-    }
-
-    apr_text_append(r->pool, body, "</D:supported-method-set>" DEBUG_CR);
-    return NULL;
-}
-
-/* generate DAV:supported-live-property-set OPTIONS response */
-static dav_error *dav_gen_supported_live_props(request_rec *r,
-                                               const dav_resource *resource,
-                                               const apr_xml_elem *elem,
-                                               apr_text_header *body)
-{
-    dav_lockdb *lockdb;
-    dav_propdb *propdb;
-    apr_xml_elem *child;
-    apr_xml_attr *attr;
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
     dav_error *err;
 
-    /* open lock database, to report on supported lock properties */
-    /* ### should open read-only */
-    if ((err = dav_open_lockdb(r, 0, &lockdb)) != NULL) {
-        return dav_push_error(r->pool, err->status, 0,
-                              "The lock database could not be opened, "
-                              "preventing the reporting of supported lock "
-                              "properties.",
-                              err);
-    }
-
-    /* open the property database (readonly) for the resource */
-    if ((err = dav_open_propdb(r, lockdb, resource, 1, NULL,
-                               &propdb)) != NULL) {
-        if (lockdb != NULL)
-            (*lockdb->hooks->close_lockdb)(lockdb);
-
-        return dav_push_error(r->pool, err->status, 0,
-                              "The property database could not be opened, "
-                              "preventing report of supported properties.",
-                              err);
-    }
-
-    apr_text_append(r->pool, body, "<D:supported-live-property-set>" DEBUG_CR);
-
-    if (elem->first_child == NULL) {
-        /* show all supported live properties */
-        dav_get_props_result props = dav_get_allprops(propdb, DAV_PROP_INSERT_SUPPORTED);
-        body->last->next = props.propstats;
-        while (body->last->next != NULL)
-            body->last = body->last->next;
-    }
-    else {
-        /* check for support of specific live property */
-        for (child = elem->first_child; child != NULL; child = child->next) {
-            if (child->ns == APR_XML_NS_DAV_ID
-                && strcmp(child->name, "supported-live-property") == 0) {
-                const char *name = NULL;
-                const char *nmspace = NULL;
-
-                /* go through attributes to find name and namespace */
-                for (attr = child->attr; attr != NULL; attr = attr->next) {
-                    if (attr->ns == APR_XML_NS_DAV_ID) {
-                        if (strcmp(attr->name, "name") == 0)
-                            name = attr->value;
-                        else if (strcmp(attr->name, "namespace") == 0)
-                            nmspace = attr->value;
-                    }
-                }
-
-                if (name == NULL) {
-                    err = dav_new_error(r->pool, HTTP_BAD_REQUEST, 0,
-                                        "A DAV:supported-live-property "
-                                        "element does not have a \"name\" "
-                                        "attribute");
-                    break;
-                }
-
-                /* default namespace to DAV: */
-                if (nmspace == NULL)
-                    nmspace = "DAV:";
-
-                /* check for support of property */
-                dav_get_liveprop_supported(propdb, nmspace, name, body);
-            }
-        }
-    }
-
-    apr_text_append(r->pool, body, "</D:supported-live-property-set>" DEBUG_CR);
-
-    dav_close_propdb(propdb);
-
-    if (lockdb != NULL)
-        (*lockdb->hooks->close_lockdb)(lockdb);
-
-    return err;
-}
-
-/* generate DAV:supported-report-set OPTIONS response */
-static dav_error *dav_gen_supported_reports(request_rec *r,
-                                            const dav_resource *resource,
-                                            const apr_xml_elem *elem,
-                                            const dav_hooks_vsn *vsn_hooks,
-                                            apr_text_header *body)
-{
-    apr_xml_elem *child;
-    apr_xml_attr *attr;
-    dav_error *err;
-    char *s;
-
-    apr_text_append(r->pool, body, "<D:supported-report-set>" DEBUG_CR);
-
-    if (vsn_hooks != NULL) {
-        const dav_report_elem *reports;
-        const dav_report_elem *rp;
-
-        if ((err = (*vsn_hooks->avail_reports)(resource, &reports)) != NULL) {
-            return dav_push_error(r->pool, err->status, 0,
-                                  "DAV:supported-report-set could not be "
-                                  "determined due to a problem fetching the "
-                                  "available reports for this resource.",
-                                  err);
-        }
-
-        if (reports != NULL) {
-            if (elem->first_child == NULL) {
-                /* show all supported reports */
-                for (rp = reports; rp->nmspace != NULL; ++rp) {
-                    /* Note: we presume reports->namespace is
-                     * properly XML/URL quoted */
-                    s = apr_psprintf(r->pool,
-                                     "<D:supported-report D:name=\"%s\" "
-                                     "D:namespace=\"%s\"/>" DEBUG_CR,
-                                     rp->name, rp->nmspace);
-                    apr_text_append(r->pool, body, s);
-                }
-            }
-            else {
-                /* check for support of specific report */
-                for (child = elem->first_child; child != NULL; child = child->next) {
-                    if (child->ns == APR_XML_NS_DAV_ID
-                        && strcmp(child->name, "supported-report") == 0) {
-                        const char *name = NULL;
-                        const char *nmspace = NULL;
-
-                        /* go through attributes to find name and namespace */
-                        for (attr = child->attr; attr != NULL; attr = attr->next) {
-                            if (attr->ns == APR_XML_NS_DAV_ID) {
-                                if (strcmp(attr->name, "name") == 0)
-                                    name = attr->value;
-                                else if (strcmp(attr->name, "namespace") == 0)
-                                    nmspace = attr->value;
-                            }
-                        }
-
-                        if (name == NULL) {
-                            return dav_new_error(r->pool, HTTP_BAD_REQUEST, 0,
-                                                 "A DAV:supported-report element "
-                                                 "does not have a \"name\" attribute");
-                        }
-
-                        /* default namespace to DAV: */
-                        if (nmspace == NULL)
-                            nmspace = "DAV:";
-
-                        for (rp = reports; rp->nmspace != NULL; ++rp) {
-                            if (strcmp(name, rp->name) == 0
-                                && strcmp(nmspace, rp->nmspace) == 0) {
-                                /* Note: we presume reports->nmspace is
-                                 * properly XML/URL quoted
-                                 */
-                                s = apr_psprintf(r->pool,
-                                                 "<D:supported-report "
-                                                 "D:name=\"%s\" "
-                                                 "D:namespace=\"%s\"/>"
-                                                 DEBUG_CR,
-                                                 rp->name, rp->nmspace);
-                                apr_text_append(r->pool, body, s);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    apr_text_append(r->pool, body, "</D:supported-report-set>" DEBUG_CR);
-    return NULL;
-}
-
-
-/* handle the SEARCH method */
-static int dav_method_search(request_rec *r)
-{
-    const dav_hooks_search *search_hooks = DAV_GET_HOOKS_SEARCH(r);
-    dav_resource *resource;
-    dav_error *err;
-    dav_response *multi_status;
-
-    /* If no search provider, decline the request */
-    if (search_hooks == NULL)
-        return DECLINED;
-
-    /* This method should only be called when the resource is not
-     * visible to Apache. We will fetch the resource from the repository,
-     * then create a subrequest for Apache to handle.
-     */
-    err = dav_get_resource(r, 1 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
-
-    if (!resource->exists) {
-        /* Apache will supply a default error for this. */
-        return HTTP_NOT_FOUND;
-    }
-
-    /* set up the HTTP headers for the response */
-    if ((err = (*resource->hooks->set_headers)(r, resource)) != NULL) {
-        err = dav_push_error(r->pool, err->status, 0,
-                             "Unable to set up HTTP headers.",
-                             err);
-        return dav_handle_err(r, err, NULL);
-    }
-
-    if (r->header_only) {
-        return DONE;
-    }
-
-    /* okay... time to search the content */
-    /* Let's validate XML and process walk function
-     * in the hook function
-     */
-    if ((err = (*search_hooks->search_resource)(r, &multi_status)) != NULL) {
-        /* ### add a higher-level description? */
-        return dav_handle_err(r, err, NULL);
-    }
-
-    /* We have results in multi_status */
-    /* Should I pass namespace?? */
-    dav_send_multistatus(r, HTTP_MULTI_STATUS, multi_status, NULL);
-
-    return DONE;
-}
-
-
-/* handle the OPTIONS method */
-static int dav_method_options(request_rec *r)
-{
-    const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
-    const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
-    const dav_hooks_binding *binding_hooks = DAV_GET_HOOKS_BINDING(r);
-    const dav_hooks_search *search_hooks = DAV_GET_HOOKS_SEARCH(r);
-    dav_resource *resource;
-    const char *dav_level;
-    char *allow;
-    char *s;
-    const apr_array_header_t *arr;
-    const apr_table_entry_t *elts;
-    apr_table_t *methods = apr_table_make(r->pool, 12);
-    apr_text_header vsn_options = { 0 };
-    apr_text_header body = { 0 };
-    apr_text *t;
-    int text_size;
-    int result;
-    int i;
-    apr_array_header_t *uri_ary;
-    apr_xml_doc *doc;
-    const apr_xml_elem *elem;
-    dav_error *err;
-
-    /* resolve the resource */
     err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
                            &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+			   
+    if (err == NULL) 
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
 
-    /* parse any request body */
-    if ((result = ap_xml_parse_input(r, &doc)) != OK) {
-        return result;
+        if(acl_hook != NULL) {
+            const dav_hooks_repository *repos_hooks = resource->hooks;
+            dav_resource *parent_resource = NULL;
+
+            err = (*repos_hooks->get_parent_resource)(resource, 
+                                                      &parent_resource);
+
+            if (err == NULL && parent_resource && parent_resource->exists ) {
+                retVal = (*acl_hook->is_allow)(principal, parent_resource, 
+                                               DAV_PERMISSION_UNBIND); 
+                
+                /* percolate the need-privileges error tag */
+                if(!retVal) resource->err = parent_resource->err; 
+            }    
+        }
     }
-    /* note: doc == NULL if no request body */
+    
+    return retVal;
+}
 
-    if (doc && !dav_validate_root(doc, "options")) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "The \"options\" element was not found.");
-        return HTTP_BAD_REQUEST;
-    }
-
-    /* determine which providers are available */
-    dav_level = "1";
-
-    if (locks_hooks != NULL) {
-        dav_level = "1,2";
-    }
-
-    if (binding_hooks != NULL)
-        dav_level = apr_pstrcat(r->pool, dav_level, ",bindings", NULL);
-
-    /* ###
-     * MSFT Web Folders chokes if length of DAV header value > 63 characters!
-     * To workaround that, we use separate DAV headers for versioning and
-     * live prop provider namespace URIs.
-     * ###
-     */
-    apr_table_setn(r->headers_out, "DAV", dav_level);
-
-    /*
-     * If there is a versioning provider, generate DAV headers
-     * for versioning options.
-     */
-    if (vsn_hooks != NULL) {
-        (*vsn_hooks->get_vsn_options)(r->pool, &vsn_options);
-
-        for (t = vsn_options.first; t != NULL; t = t->next)
-            apr_table_addn(r->headers_out, "DAV", t->text);
-    }
-
-    /*
-     * Gather property set URIs from all the liveprop providers,
-     * and generate a separate DAV header for each URI, to avoid
-     * problems with long header lengths.
-     */
-    uri_ary = apr_array_make(r->pool, 5, sizeof(const char *));
-    dav_run_gather_propsets(uri_ary);
-    for (i = 0; i < uri_ary->nelts; ++i) {
-        if (((char **)uri_ary->elts)[i] != NULL)
-            apr_table_addn(r->headers_out, "DAV", ((char **)uri_ary->elts)[i]);
-    }
-
-    /* this tells MSFT products to skip looking for FrontPage extensions */
-    apr_table_setn(r->headers_out, "MS-Author-Via", "DAV");
-
+static void dav_gen_supported_methods_table(request_rec *r,
+                                            const dav_resource *resource,
+                                            apr_table_t **p_methods)
+{
     /*
      * Determine which methods are allowed on the resource.
      * Three cases:  resource is null (3), is lock-null (7.4), or exists.
@@ -1652,6 +1634,14 @@ static int dav_method_options(request_rec *r)
      * Lock-null supports PROPFIND and UNLOCK.
      * Existing resources support lots of stuff.
      */
+
+    const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(r);
+    const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
+    const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
+    const dav_hooks_binding *binding_hooks = DAV_GET_HOOKS_BINDING(r);
+    const dav_hooks_search *search_hooks = DAV_GET_HOOKS_SEARCH(r);
+    apr_table_t *methods = apr_table_make(r->pool, 12);
+    *p_methods = methods;
 
     apr_table_addn(methods, "OPTIONS", "");
 
@@ -1745,12 +1735,721 @@ static int dav_method_options(request_rec *r)
     if (binding_hooks != NULL
         && (*binding_hooks->is_bindable)(resource)) {
         apr_table_addn(methods, "BIND", "");
+        apr_table_addn(methods, "UNBIND", "");
+        apr_table_addn(methods, "REBIND", "");
+   
     }
 
     /* If there is a search provider, set SEARCH in option */
     if (search_hooks != NULL) {
         apr_table_addn(methods, "SEARCH", "");
     }
+
+    if (acl_hooks != NULL)
+        apr_table_addn(methods, "ACL", "");
+}
+
+/* generate DAV:supported-method-set OPTIONS response */
+static dav_error *dav_gen_supported_methods(request_rec *r,
+                                            const apr_xml_elem *elem,
+                                            const apr_table_t *methods,
+                                            apr_text_header *body)
+{
+    const apr_array_header_t *arr;
+    const apr_table_entry_t *elts;
+    apr_xml_elem *child;
+    apr_xml_attr *attr;
+    char *s;
+    int i;
+
+    apr_text_append(r->pool, body, "<D:supported-method-set>" DEBUG_CR);
+
+    if (elem == NULL || elem->first_child == NULL) {
+        /* show all supported methods */
+        arr = apr_table_elts(methods);
+        elts = (const apr_table_entry_t *)arr->elts;
+
+        for (i = 0; i < arr->nelts; ++i) {
+            if (elts[i].key == NULL)
+                continue;
+
+            s = apr_psprintf(r->pool,
+                             "<D:supported-method D:name=\"%s\"/>"
+                             DEBUG_CR,
+                             elts[i].key);
+            apr_text_append(r->pool, body, s);
+        }
+    }
+    else {
+        /* check for support of specific methods */
+        for (child = elem->first_child; child != NULL; child = child->next) {
+            if (child->ns == APR_XML_NS_DAV_ID
+                && strcmp(child->name, "supported-method") == 0) {
+                const char *name = NULL;
+
+                /* go through attributes to find method name */
+                for (attr = child->attr; attr != NULL; attr = attr->next) {
+                    if (attr->ns == APR_XML_NS_DAV_ID
+                        && strcmp(attr->name, "name") == 0)
+                            name = attr->value;
+                }
+
+                if (name == NULL) {
+                    return dav_new_error(r->pool, HTTP_BAD_REQUEST, 0,
+                                         "A DAV:supported-method element "
+                                         "does not have a \"name\" attribute");
+                }
+
+                /* see if method is supported */
+                if (apr_table_get(methods, name) != NULL) {
+                    s = apr_psprintf(r->pool,
+                                     "<D:supported-method D:name=\"%s\"/>"
+                                     DEBUG_CR,
+                                     name);
+                    apr_text_append(r->pool, body, s);
+                }
+            }
+        }
+    }
+
+    apr_text_append(r->pool, body, "</D:supported-method-set>" DEBUG_CR);
+    return NULL;
+}
+
+/* generate DAV:supported-live-property-set OPTIONS response */
+static dav_error *dav_gen_supported_live_props(request_rec *r,
+                                               const dav_resource *resource,
+                                               const apr_xml_elem *elem,
+                                               apr_text_header *body)
+{
+    dav_lockdb *lockdb;
+    dav_propdb *propdb;
+    apr_xml_elem *child;
+    apr_xml_attr *attr;
+    dav_error *err;
+
+    /* open lock database, to report on supported lock properties */
+    /* ### should open read-only */
+    if ((err = dav_open_lockdb(r, 0, &lockdb)) != NULL) {
+        return dav_push_error(r->pool, err->status, 0,
+                              "The lock database could not be opened, "
+                              "preventing the reporting of supported lock "
+                              "properties.",
+                              err);
+    }
+
+    /* open the property database (readonly) for the resource */
+    if ((err = dav_open_propdb(r, lockdb, resource, 1, NULL,
+                               &propdb)) != NULL) {
+        if (lockdb != NULL)
+            (*lockdb->hooks->close_lockdb)(lockdb);
+
+        return dav_push_error(r->pool, err->status, 0,
+                              "The property database could not be opened, "
+                              "preventing report of supported properties.",
+                              err);
+    }
+
+    apr_text_append(r->pool, body, "<D:supported-live-property-set>" DEBUG_CR);
+
+    if (elem == NULL || elem->first_child == NULL) {
+        /* show all supported live properties */
+        dav_get_props_result props = dav_get_allprops(propdb, DAV_PROP_INSERT_SUPPORTED);
+        body->last->next = props.propstats;
+        while (body->last->next != NULL)
+            body->last = body->last->next;
+    }
+    else {
+        /* check for support of specific live property */
+        for (child = elem->first_child; child != NULL; child = child->next) {
+            if (child->ns == APR_XML_NS_DAV_ID
+                && strcmp(child->name, "supported-live-property") == 0) {
+                const char *name = NULL;
+                const char *nmspace = NULL;
+
+                /* go through attributes to find name and namespace */
+                for (attr = child->attr; attr != NULL; attr = attr->next) {
+                    if (attr->ns == APR_XML_NS_DAV_ID) {
+                        if (strcmp(attr->name, "name") == 0)
+                            name = attr->value;
+                        else if (strcmp(attr->name, "namespace") == 0)
+                            nmspace = attr->value;
+                    }
+                }
+
+                if (name == NULL) {
+                    err = dav_new_error(r->pool, HTTP_BAD_REQUEST, 0,
+                                        "A DAV:supported-live-property "
+                                        "element does not have a \"name\" "
+                                        "attribute");
+                    break;
+                }
+
+                /* default namespace to DAV: */
+                if (nmspace == NULL)
+                    nmspace = "DAV:";
+
+                /* check for support of property */
+                dav_get_liveprop_supported(propdb, nmspace, name, body);
+            }
+        }
+    }
+
+    apr_text_append(r->pool, body, "</D:supported-live-property-set>" DEBUG_CR);
+
+    dav_close_propdb(propdb);
+
+    if (lockdb != NULL)
+        (*lockdb->hooks->close_lockdb)(lockdb);
+
+    return err;
+}
+
+/* generate DAV:supported-report-set OPTIONS response */
+static dav_error *dav_gen_supported_reports(request_rec *r,
+                                            const dav_resource *resource,
+                                            const apr_xml_elem *elem,
+                                            const dav_hooks_vsn *vsn_hooks,
+                                            apr_text_header *body)
+{
+    apr_xml_elem *child;
+    apr_xml_attr *attr;
+    dav_error *err;
+    char *s;
+
+    apr_text_append(r->pool, body, "<D:supported-report-set>" DEBUG_CR);
+
+    if (vsn_hooks != NULL) {
+        const dav_report_elem *reports;
+        const dav_report_elem *rp;
+
+        if ((err = (*vsn_hooks->avail_reports)(resource, &reports)) != NULL) {
+            return dav_push_error(r->pool, err->status, 0,
+                                  "DAV:supported-report-set could not be "
+                                  "determined due to a problem fetching the "
+                                  "available reports for this resource.",
+                                  err);
+        }
+
+        if (reports != NULL) {
+            if (elem == NULL || elem->first_child == NULL) {
+                /* show all supported reports */
+                for (rp = reports; rp->nmspace != NULL; ++rp) {
+                    /* Note: we presume reports->namespace is
+                     * properly XML/URL quoted */
+                    s = apr_psprintf(r->pool,
+                                     "<D:supported-report D:name=\"%s\" "
+                                     "D:namespace=\"%s\"/>" DEBUG_CR,
+                                     rp->name, rp->nmspace);
+                    apr_text_append(r->pool, body, s);
+                }
+            }
+            else {
+                /* check for support of specific report */
+                for (child = elem->first_child; child != NULL; child = child->next) {
+                    if (child->ns == APR_XML_NS_DAV_ID
+                        && strcmp(child->name, "supported-report") == 0) {
+                        const char *name = NULL;
+                        const char *nmspace = NULL;
+
+                        /* go through attributes to find name and namespace */
+                        for (attr = child->attr; attr != NULL; attr = attr->next) {
+                            if (attr->ns == APR_XML_NS_DAV_ID) {
+                                if (strcmp(attr->name, "name") == 0)
+                                    name = attr->value;
+                                else if (strcmp(attr->name, "namespace") == 0)
+                                    nmspace = attr->value;
+                            }
+                        }
+
+                        if (name == NULL) {
+                            return dav_new_error(r->pool, HTTP_BAD_REQUEST, 0,
+                                                 "A DAV:supported-report element "
+                                                 "does not have a \"name\" attribute");
+                        }
+
+                        /* default namespace to DAV: */
+                        if (nmspace == NULL)
+                            nmspace = "DAV:";
+
+                        for (rp = reports; rp->nmspace != NULL; ++rp) {
+                            if (strcmp(name, rp->name) == 0
+                                && strcmp(nmspace, rp->nmspace) == 0) {
+                                /* Note: we presume reports->nmspace is
+                                 * properly XML/URL quoted
+                                 */
+                                s = apr_psprintf(r->pool,
+                                                 "<D:supported-report "
+                                                 "D:name=\"%s\" "
+                                                 "D:namespace=\"%s\"/>"
+                                                 DEBUG_CR,
+                                                 rp->name, rp->nmspace);
+                                apr_text_append(r->pool, body, s);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    apr_text_append(r->pool, body, "</D:supported-report-set>" DEBUG_CR);
+    return NULL;
+}
+
+dav_error *dav_gen_supported_options(request_rec *r,
+                                     const dav_resource *resource,
+                                     int propid, apr_text_header *body)
+{
+    if (propid == DAV_PROPID_supported_live_property_set)
+        return dav_gen_supported_live_props(r, resource, NULL, body);
+
+    if (propid == DAV_PROPID_supported_report_set) {
+        const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
+        return dav_gen_supported_reports(r, resource, NULL, vsn_hooks, body);
+    }
+
+    if (propid == DAV_PROPID_supported_method_set) {
+        apr_table_t *methods;
+        dav_gen_supported_methods_table(r, resource, &methods);
+        return dav_gen_supported_methods(r, NULL, methods, body);
+    }
+
+    return NULL;
+}
+
+static const dav_principal *dav_acl_get_principal(request_rec *r,
+                                                  apr_xml_elem *principal_elem)
+{
+    apr_pool_t *p = r->pool;
+    const char *principal_url = NULL;
+    dav_principal *principal = apr_pcalloc(p, sizeof(dav_principal));
+    
+    if (principal_elem)
+    {
+	apr_xml_elem *child_elem = NULL;
+	if ( dav_find_child(principal_elem, "all") != NULL )
+            principal->type = PRINCIPAL_ALL;
+	else if ( dav_find_child(principal_elem, "authenticated") != NULL )
+    	    principal->type = PRINCIPAL_AUTHENTICATED;
+	else if ( dav_find_child(principal_elem, "unauthenticated") != NULL )
+    	    principal->type = PRINCIPAL_UNAUTHENTICATED;
+	else if ( ( child_elem = dav_find_child(principal_elem, "href") ) != NULL )
+    	    principal_url = dav_xml_get_cdata(child_elem, p, TRUE);
+        else
+            principal = NULL;
+    }
+    
+    if (principal_url)
+	principal = dav_principal_make_from_url(r, principal_url);
+    
+    return principal;
+}
+
+static dav_prop_name *dav_acl_get_property(apr_pool_t *p, 
+                                           apr_xml_elem *principal_elem,
+                                           apr_array_header_t *ns_xlate )
+{
+    dav_prop_name *property = NULL;
+    apr_xml_elem *child_elem = NULL;
+
+    if ( ( child_elem = dav_find_child(principal_elem, "property") ) != NULL )
+    {
+        property = apr_pcalloc(p, sizeof(*property));
+        property->ns = APR_XML_GET_URI_ITEM(ns_xlate, child_elem->first_child->ns);
+        property->name = child_elem->first_child->name;
+    }
+
+    return property;
+}
+
+static dav_privileges *dav_acl_get_privileges(apr_pool_t *p, 
+                                              apr_xml_elem *privilege_elem,
+                                              apr_array_header_t *namespaces)
+{
+    dav_privileges *privileges = dav_privileges_new(p);
+    if (privileges)
+    {
+	if (privilege_elem)
+	{
+	    apr_xml_elem *child_elem;
+	    for (child_elem = privilege_elem->first_child; 
+                 child_elem; 
+                 child_elem = child_elem->next)
+	    {
+		if (child_elem->ns == APR_XML_NS_DAV_ID 
+                 && !strcmp(child_elem->name, "privilege"))
+		{
+		    dav_privilege *privilege = dav_privilege_new_by_xml(p, namespaces, child_elem);
+		    if (privilege)
+			dav_add_privilege(privileges, privilege);
+		}
+	    }
+	}
+    }
+    return privileges;
+}
+
+/* handle the SEARCH method */
+static int dav_method_search(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    const dav_hooks_search *search_hooks = DAV_GET_HOOKS_SEARCH(r);
+    dav_resource *resource = dav_r->resource;
+    dav_error *err;
+    dav_response *multi_status;
+
+    /* If no search provider, decline the request */
+    if (search_hooks == NULL)
+        return DECLINED;
+
+    if(resource == NULL) {
+        /* This method should only be called when the resource is not
+         * visible to Apache. We will fetch the resource from the repository,
+         * then create a subrequest for Apache to handle.
+         */
+        err = dav_get_resource(r, 1 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
+
+    if (!resource->exists) {
+        /* Apache will supply a default error for this. */
+        return HTTP_NOT_FOUND;
+    }
+
+    /* set up the HTTP headers for the response */
+    if ((err = (*resource->hooks->set_headers)(r, resource)) != NULL) {
+        err = dav_push_error(r->pool, err->status, 0,
+                             "Unable to set up HTTP headers.",
+                             err);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    if (r->header_only) {
+        return DONE;
+    }
+
+    /* okay... time to search the content */
+    /* Let's validate XML and process walk function
+     * in the hook function
+     */
+    if ((err = (*search_hooks->search_resource)(r, resource, &multi_status)) != NULL) {
+        /* ### add a higher-level description? */
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* We have results in multi_status */
+    /* Should I pass namespace?? */
+    dav_send_multistatus(r, HTTP_MULTI_STATUS, multi_status, NULL);
+
+    return DONE;
+}
+
+/* handle the ACL method */
+static int dav_method_acl(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
+    dav_error *err = NULL;
+    apr_xml_doc *doc;
+    apr_xml_elem *ace_elem;
+
+    dav_acl *new_acl;
+    int result;
+    const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(r);
+
+    if ( acl_hooks == NULL )
+        return DECLINED;
+
+    if(resource == NULL) {
+        err = dav_get_resource(r, 0 /* label_allowed */, 
+                               0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
+
+    if (!resource->exists) {
+        /* Apache will supply a default error for this. */
+        return HTTP_NOT_FOUND;
+    }
+
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if ((result = ap_xml_parse_input(r, &doc)) != OK)
+            return result;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
+    }
+
+    if ((doc == NULL) || (doc && !dav_validate_root(doc, "acl"))) {
+        /* This supplies additional information for the default message. */
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                "The \"acl\" element was not found.");
+        return HTTP_BAD_REQUEST;
+    }
+
+    new_acl = (*acl_hooks->get_current_acl)(resource);
+    if (!new_acl)
+    {
+        const dav_principal *currentPrincipal = 
+            dav_principal_make_from_request(r);
+        new_acl = dav_acl_new(r->pool, resource, currentPrincipal, 
+                              currentPrincipal);
+    }
+    else
+        dav_clear_all_ace(new_acl);
+
+    if (!new_acl) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                "can not create acl");
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+    for (ace_elem = doc->root->first_child; 
+         ace_elem; 
+         ace_elem = ace_elem->next)
+    {
+        if(ace_elem->ns != APR_XML_NS_DAV_ID 
+         || strcmp(ace_elem->name, "ace") != 0)
+            continue;   /* ignore non DAV:ace elements */
+
+        apr_xml_elem *principal_elem;
+        apr_xml_elem *property_elem;
+        const dav_principal *principal = NULL;
+        dav_prop_name *property = NULL;
+
+        principal_elem = dav_find_child(ace_elem, "principal");
+        principal = dav_acl_get_principal(r, principal_elem);
+
+        if(!principal) {
+            property_elem = dav_find_child(principal_elem, "property");
+            property = dav_acl_get_property(r->pool, principal_elem, 
+                                            doc->namespaces);
+            apr_xml_elem *self_elem = NULL;
+            if(property) {
+                /* get the principal corresponding to the DAV:property */
+                dav_propdb *propdb = NULL;
+                dav_open_propdb(r, NULL, resource, 1, doc->namespaces, &propdb);
+                dav_get_props_result prop_result = 
+                                        dav_get_props(propdb, property_elem);
+
+                /* parse the prop_result */
+                apr_xml_parser *parser = apr_xml_parser_create(r->pool);
+                apr_text *t = prop_result.propstats;
+                apr_xml_doc *doc = NULL;
+
+                /* DAV: xmlns declaration fix */
+                const char *begin_multistatus = 
+                                            "<D:multistatus xmlns:D=\"DAV:\">";
+                apr_xml_parser_feed(parser, begin_multistatus, 
+                                    strlen(begin_multistatus));
+                for(; t; t = t->next)
+                    apr_xml_parser_feed(parser, t->text, strlen(t->text));
+
+                const char *end_multistatus = "</D:multistatus>";
+                apr_xml_parser_feed(parser, end_multistatus, 
+                                    strlen(end_multistatus));
+
+                apr_xml_parser_done(parser, &doc);
+
+                /* get the href elem */
+                apr_xml_elem *property_elem = 
+                            doc->root->first_child->first_child->first_child;
+
+                apr_xml_elem *href_elem = dav_find_child(property_elem, "href");
+
+                const char *principal_uri = 
+                                    dav_xml_get_cdata(href_elem, r->pool, 1);
+
+                principal = dav_principal_make_from_url(r, principal_uri);
+
+            }
+            else if((self_elem = dav_find_child(principal_elem, "self"))) {
+                principal = dav_principal_make_from_url(r, resource->uri);
+                property = apr_pcalloc(r->pool, sizeof(*property));
+                property->name = self_elem->name;
+            }
+        }
+
+        if(principal)
+        {
+            int is_deny;
+            apr_xml_elem *ace_deny_elem;
+            apr_xml_elem *ace_grant_elem;
+            apr_xml_elem *ace_privileges_elem;
+            dav_privileges *privileges;
+            char *inherited=NULL;
+
+            if (dav_find_child(ace_elem, "protected") 
+             || dav_find_child(ace_elem, "inherited"))
+                return HTTP_BAD_REQUEST;
+
+            ace_deny_elem = dav_find_child(ace_elem, "deny");
+            ace_grant_elem = dav_find_child(ace_elem, "grant");
+
+            is_deny = ( ace_deny_elem != NULL );
+            if ( is_deny && ( ace_grant_elem != NULL ) )
+            {
+                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                        "The grant and deny elements have found.");
+                return HTTP_BAD_REQUEST;
+            }
+
+            ace_privileges_elem = is_deny ? ace_deny_elem : ace_grant_elem;
+            privileges = dav_acl_get_privileges(r->pool, ace_privileges_elem, doc->namespaces);
+            if ( privileges )
+            {
+                dav_ace *new_ace = dav_ace_new(r->pool, principal, property, 
+                                               privileges, is_deny, inherited, 
+                                               0 /*is_protected*/);
+                if (new_ace)
+                    dav_add_ace(new_acl, new_ace);
+            }
+        }
+        else
+        {
+            err = dav_new_error_tag(r->pool, HTTP_FORBIDDEN, 0, 
+                                    "wrong principal in ace", NULL, 
+                                    "recognized-principal", NULL);
+        }
+    }
+
+    if(!err) 
+        err = (*acl_hooks->set_acl)(new_acl, NULL);
+
+    if(err)
+        return dav_handle_err(r, err, NULL);
+
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
+    return OK;
+}
+
+static int dav_is_allow_method_acl(dav_request *dav_r, 
+                                   const dav_hooks_acl *acl_hook, 
+                                   const dav_principal *principal)
+{
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err;
+
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err == NULL) 
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
+
+        if(resource->exists && acl_hook != NULL) 
+            retVal = (*acl_hook->is_allow)(principal, resource,
+                                           DAV_PERMISSION_WRITE_ACL);
+    }
+    
+    return retVal;
+}
+
+/* handle the OPTIONS method */
+static int dav_method_options(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(r);
+    const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
+    const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
+    const dav_hooks_binding *binding_hooks = DAV_GET_HOOKS_BINDING(r);
+    const dav_hooks_search *search_hooks = DAV_GET_HOOKS_SEARCH(r);
+    dav_resource *resource = dav_r->resource;
+    const char *dav_level;
+    char *allow;
+    char *s;
+    const apr_array_header_t *arr;
+    const apr_table_entry_t *elts;
+    apr_table_t *methods;
+    apr_text_header vsn_options = { 0 };
+    apr_text_header body = { 0 };
+    apr_text *t;
+    int text_size;
+    int result;
+    int i;
+    apr_array_header_t *uri_ary;
+    apr_xml_doc *doc;
+    const apr_xml_elem *elem;
+    dav_error *err;
+
+    if(resource == NULL) {
+        /* resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
+
+    /* parse any request body */
+    if ((result = ap_xml_parse_input(r, &doc)) != OK) {
+        return result;
+    }
+    /* note: doc == NULL if no request body */
+
+    if (doc && !dav_validate_root(doc, "options")) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "The \"options\" element was not found.");
+        return HTTP_BAD_REQUEST;
+    }
+
+    /* determine which providers are available */
+    dav_level = "1";
+
+    if (locks_hooks != NULL) {
+        dav_level = "1,2";
+    }
+
+    if (binding_hooks != NULL)
+        dav_level = apr_pstrcat(r->pool, dav_level, ",bindings", NULL);
+
+    if (acl_hooks != NULL)
+        dav_level = apr_pstrcat(r->pool, dav_level, ",access-control", NULL);
+
+    /* ###
+     * MSFT Web Folders chokes if length of DAV header value > 63 characters!
+     * To workaround that, we use separate DAV headers for versioning and
+     * live prop provider namespace URIs.
+     * ###
+     */
+    apr_table_setn(r->headers_out, "DAV", dav_level);
+
+    /*
+     * If there is a versioning provider, generate DAV headers
+     * for versioning options.
+     */
+    if (vsn_hooks != NULL) {
+        (*vsn_hooks->get_vsn_options)(r->pool, &vsn_options);
+
+        for (t = vsn_options.first; t != NULL; t = t->next)
+            apr_table_addn(r->headers_out, "DAV", t->text);
+    }
+
+    /*
+     * Gather property set URIs from all the liveprop providers,
+     * and generate a separate DAV header for each URI, to avoid
+     * problems with long header lengths.
+     */
+    uri_ary = apr_array_make(r->pool, 5, sizeof(const char *));
+    dav_run_gather_propsets(uri_ary);
+    for (i = 0; i < uri_ary->nelts; ++i) {
+        if (((char **)uri_ary->elts)[i] != NULL)
+            apr_table_addn(r->headers_out, "DAV", ((char **)uri_ary->elts)[i]);
+    }
+
+    /* this tells MSFT products to skip looking for FrontPage extensions */
+    apr_table_setn(r->headers_out, "MS-Author-Via", "DAV");
+
+    dav_gen_supported_methods_table(r, resource, &methods);
 
     /* Generate the Allow header */
     arr = apr_table_elts(methods);
@@ -1766,7 +2465,7 @@ static int dav_method_options(request_rec *r)
         text_size += strlen(elts[i].key) + 1;
     }
 
-    s = allow = apr_palloc(r->pool, text_size);
+    s = allow = apr_pcalloc(r->pool, text_size);
 
     for (i = 0; i < arr->nelts; ++i) {
         if (elts[i].key == NULL)
@@ -1889,7 +2588,23 @@ static dav_error * dav_propfind_walker(dav_walk_resource *wres, int calltype)
     dav_walker_ctx *ctx = wres->walk_ctx;
     dav_error *err;
     dav_propdb *propdb;
+    int is_allow = TRUE;
+    apr_xml_elem *prop_elem;
+    char *prop_text;
     dav_get_props_result propstats = { 0 };
+    request_rec *r = ctx->r;
+    const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(r);
+    const dav_principal *principal = dav_principal_make_from_request(r);
+    const char *status_forbidden;
+    apr_text_header hdr = { 0 };
+
+    /* check for DAV:read */
+    if(acl_hooks != NULL)
+        /* TODO: try to cache DAV:read checks */
+        is_allow = (*acl_hooks->is_allow)(principal, 
+                                          (dav_resource *) wres->resource,
+                                          DAV_PERMISSION_READ);
+
 
     /*
     ** Note: ctx->doc can only be NULL for DAV_PROPFIND_IS_ALLPROP. Since
@@ -1922,14 +2637,76 @@ static dav_error * dav_propfind_walker(dav_walk_resource *wres, int calltype)
     }
     /* ### what to do about closing the propdb on server failure? */
 
-    if (ctx->propfind_type == DAV_PROPFIND_IS_PROP) {
-        propstats = dav_get_props(propdb, ctx->doc);
+    /* If the principal does not have DAV:read on the resource,
+     * send 403 for all the requested props */
+    if(!is_allow) {
+        if(ctx->propfind_type == DAV_PROPFIND_IS_PROP) {
+            /* get the "prop" element */
+            prop_elem = dav_find_child(ctx->doc->root, "prop");
+
+            /* begin propstat */
+            apr_text_append(r->pool, &hdr, "<D:propstat>" DEBUG_CR);
+
+            /* convert prop xml elem to text */
+            apr_xml_to_text(r->pool, prop_elem, APR_XML_X2T_FULL_NS_LANG, 
+                            ctx->doc->namespaces, NULL, 
+                            (const char **) &prop_text, NULL);
+
+            /* append "prop" text */
+            apr_text_append(r->pool, &hdr, (const char *)prop_text);
+
+            /* append status */
+            status_forbidden = apr_psprintf(r->pool, 
+                                           "<D:status>HTTP/1.1 %s </D:status>" DEBUG_CR, 
+                                            ap_get_status_line(dav_get_permission_denied_status(r)));
+            apr_text_append(r->pool, &hdr, status_forbidden);
+
+            /* end propstat */
+            apr_text_append(r->pool, &hdr, "</D:propstat>" DEBUG_CR);
+
+            propstats.propstats = hdr.first;
+            propstats.xmlns = NULL;
+        }
+        else {
+            propstats = dav_get_allprops(propdb, DAV_PROP_INSERT_NAME);
+
+            /* get the last text element */
+            apr_text *last;
+            for(last = propstats.propstats; last->next; last = last->next);
+            
+            /* over-write the status */
+            last->text = 
+                (const char *)apr_psprintf(r->pool,
+                                           "</D:prop>" DEBUG_CR
+                                           "<D:status>HTTP/1.1 %s </D:status>" DEBUG_CR 
+                                           "</D:propstat>" DEBUG_CR,
+                                           ap_get_status_line(dav_get_permission_denied_status(r)));
+        }
     }
     else {
-        dav_prop_insert what = ctx->propfind_type == DAV_PROPFIND_IS_ALLPROP
-                                 ? DAV_PROP_INSERT_VALUE
-                                 : DAV_PROP_INSERT_NAME;
-        propstats = dav_get_allprops(propdb, what);
+
+        if (ctx->propfind_type == DAV_PROPFIND_IS_PROP) {
+            prop_elem = dav_find_child(ctx->doc->root, "prop");
+            propstats = dav_get_props(propdb, prop_elem);
+        } else if (ctx->propfind_type == DAV_PROPFIND_IS_PROPNAME)
+            propstats = dav_get_allprops(propdb, DAV_PROP_INSERT_NAME);
+        else if (ctx->propfind_type == DAV_PROPFIND_IS_ALLPROP) {
+            apr_text *iter;
+            dav_get_props_result inc_propstats = { 0 };
+            if (ctx->doc != NULL) {
+                apr_xml_elem *inc_elem = dav_find_child(ctx->doc->root, "include");
+                if (inc_elem)
+                    inc_propstats = dav_get_props(propdb, inc_elem);
+            }
+            propstats = dav_get_allprops(propdb, DAV_PROP_INSERT_VALUE);
+            propstats.xmlns = inc_propstats.xmlns;
+
+            /* go to the last propstat */
+            for (iter = propstats.propstats; iter->next; iter = iter->next);
+
+            /* link inc_propstats to the end */
+            iter->next = inc_propstats.propstats;
+        }
     }
     dav_close_propdb(propdb);
 
@@ -1945,9 +2722,10 @@ static dav_error * dav_propfind_walker(dav_walk_resource *wres, int calltype)
 }
 
 /* handle the PROPFIND method */
-static int dav_method_propfind(request_rec *r)
+static int dav_method_propfind(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     int depth;
     dav_error *err;
     int result;
@@ -1956,11 +2734,13 @@ static int dav_method_propfind(request_rec *r)
     dav_walker_ctx ctx = { { 0 } };
     dav_response *multi_status;
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 1 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 1 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     if (dav_get_resource_state(r, resource) == DAV_RESOURCE_NULL) {
         /* Apache will supply a default error for this. */
@@ -1989,8 +2769,10 @@ static int dav_method_propfind(request_rec *r)
         }
     }
 
-    if ((result = ap_xml_parse_input(r, &doc)) != OK) {
-        return result;
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if ((result = ap_xml_parse_input(r, &doc)) != OK)
+            return result;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
     }
     /* note: doc == NULL if no request body */
 
@@ -2024,7 +2806,7 @@ static int dav_method_propfind(request_rec *r)
         return HTTP_BAD_REQUEST;
     }
 
-    ctx.w.walk_type = DAV_WALKTYPE_NORMAL | DAV_WALKTYPE_AUTH;
+    ctx.w.walk_type = DAV_WALKTYPE_NORMAL;
     ctx.w.func = dav_propfind_walker;
     ctx.w.walk_ctx = &ctx;
     ctx.w.pool = r->pool;
@@ -2046,7 +2828,7 @@ static int dav_method_propfind(request_rec *r)
     }
     if (ctx.w.lockdb != NULL) {
         /* if we have a lock database, then we can walk locknull resources */
-        ctx.w.walk_type |= DAV_WALKTYPE_LOCKNULL;
+        /* ctx.w.walk_type |= DAV_WALKTYPE_LOCKNULL; */
     }
 
     /* send <multistatus> tag, with all doc->namespaces attached.  */
@@ -2086,6 +2868,30 @@ static int dav_method_propfind(request_rec *r)
 
     /* the response has been sent. */
     return DONE;
+}
+
+static int dav_is_allow_method_propfind(dav_request *dav_r, 
+                                        const dav_hooks_acl *acl_hook, 
+                                        const dav_principal *principal)
+{
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err;
+
+    err = dav_get_resource(r, 1 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err == NULL) 
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
+
+        if(resource->exists && acl_hook != NULL)
+            retVal = (*acl_hook->is_allow)(principal, resource, DAV_PERMISSION_READ);
+    }
+    
+    return retVal;
 }
 
 static apr_text * dav_failed_proppatch(apr_pool_t *p,
@@ -2135,6 +2941,16 @@ static apr_text * dav_failed_proppatch(apr_pool_t *p,
                          "</D:status>" DEBUG_CR,
                          ctx->err->status);
         apr_text_append(p, &hdr, s);
+
+        if(ctx->err->tagname) {
+            /* might also have to handle err->content & err->namespace.
+             * currently only using for cannot-modify-protected-property,
+             * so content/namespace support not required */
+            s = apr_psprintf(p,
+                             "<D:error><D:%s/></D:error>",
+                             ctx->err->tagname);
+            apr_text_append(p, &hdr, s);
+        }
 
         /* ### we should use compute_desc if necessary... */
         if (ctx->err->desc != NULL) {
@@ -2205,9 +3021,11 @@ static int dav_process_ctx_list(void (*func)(dav_prop_ctx *ctx),
         if (reverse)
             --ctx;
 
-        (*func)(ctx);
-        if (stop_on_error && DAV_PROP_CTX_HAS_ERR(*ctx)) {
-            return 1;
+        if (!ctx->no_process) {
+            (*func)(ctx);
+            if (stop_on_error && DAV_PROP_CTX_HAS_ERR(*ctx)) {
+                return 1;
+            }
         }
 
         if (!reverse)
@@ -2217,34 +3035,89 @@ static int dav_process_ctx_list(void (*func)(dav_prop_ctx *ctx),
     return 0;
 }
 
-/* handle the PROPPATCH method */
-static int dav_method_proppatch(request_rec *r)
+static int dav_get_props_ctx_list(request_rec *r,
+                                  dav_propdb *propdb,
+                                  apr_xml_elem *update_elems,
+                                  apr_array_header_t **p_ctx_list)
 {
+    apr_array_header_t *ctx_list;
+    dav_prop_ctx *ctx;
+    apr_xml_elem *child;
+
+    /* set up an array to hold property operation contexts */
+    ctx_list = apr_array_make(r->pool, 10, sizeof(dav_prop_ctx));
+
+    /* do a first pass to ensure that all "remove" properties exist */
+    for (child = update_elems->first_child; child; child = child->next) {
+        int is_remove;
+        apr_xml_elem *prop_group;
+        apr_xml_elem *one_prop;
+
+        /* Ignore children that are not set/remove */
+        if (child->ns != APR_XML_NS_DAV_ID
+            || (!(is_remove = (strcmp(child->name, "remove") == 0))
+                && strcmp(child->name, "set") != 0)) {
+            continue;
+        }
+
+        /* make sure that a "prop" child exists for set/remove */
+        if ((prop_group = dav_find_child(child, "prop")) == NULL) {
+            /* This supplies additional information for the default message. */
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "A \"prop\" element is missing inside "
+                          "the propertyupdate command.");
+            return HTTP_BAD_REQUEST;
+        }
+
+        for (one_prop = prop_group->first_child; one_prop;
+             one_prop = one_prop->next) {
+
+            ctx = (dav_prop_ctx *)apr_array_push(ctx_list);
+            ctx->propdb = propdb;
+            ctx->operation = is_remove ? DAV_PROP_OP_DELETE : DAV_PROP_OP_SET;
+            ctx->prop = one_prop;
+
+            ctx->r = r;         /* for later use by dav_prop_log_errors() */
+
+        }
+    }
+    *p_ctx_list = ctx_list;
+    return OK;
+}
+
+/* handle the PROPPATCH method */
+static int dav_method_proppatch(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
     dav_error *err;
-    dav_resource *resource;
+    dav_resource *resource = dav_r->resource;
     int result;
     apr_xml_doc *doc;
-    apr_xml_elem *child;
     dav_propdb *propdb;
+    apr_array_header_t *ctx_list;
     int failure = 0;
     dav_response resp = { 0 };
     apr_text *propstat_text;
-    apr_array_header_t *ctx_list;
-    dav_prop_ctx *ctx;
     dav_auto_version_info av_info;
+    int resource_state;
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
+
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
         return HTTP_NOT_FOUND;
     }
 
-    if ((result = ap_xml_parse_input(r, &doc)) != OK) {
-        return result;
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if ((result = ap_xml_parse_input(r, &doc)) != OK)
+            return result;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
     }
     /* note: doc == NULL if no request body */
 
@@ -2256,13 +3129,13 @@ static int dav_method_proppatch(request_rec *r)
         return HTTP_BAD_REQUEST;
     }
 
-    /* Check If-Headers and existing locks */
-    /* Note: depth == 0. Implies no need for a multistatus response. */
-    if ((err = dav_validate_request(r, resource, 0, NULL, NULL,
-                                    DAV_VALIDATE_RESOURCE, NULL)) != NULL) {
-        /* ### add a higher-level description? */
-        return dav_handle_err(r, err, NULL);
-    }
+    dav_bind bind = { 0 };
+    bind.cur_resource = bind.new_resource = resource;
+    resource_state = dav_get_resource_state(r, resource);
+    err = dav_validate_request
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
+       DAV_VALIDATE_IGNORE_TARGET_LOCKS, resource_state, NULL, NULL, NULL);
+    if (err) return dav_handle_err(r, err, NULL);
 
     /* make sure the resource can be modified (if versioning repository) */
     if ((err = dav_auto_checkout(r, resource,
@@ -2288,57 +3161,16 @@ static int dav_method_proppatch(request_rec *r)
     /* ### what to do about closing the propdb on server failure? */
 
     /* ### validate "live" properties */
-
-    /* set up an array to hold property operation contexts */
-    ctx_list = apr_array_make(r->pool, 10, sizeof(dav_prop_ctx));
-
-    /* do a first pass to ensure that all "remove" properties exist */
-    for (child = doc->root->first_child; child; child = child->next) {
-        int is_remove;
-        apr_xml_elem *prop_group;
-        apr_xml_elem *one_prop;
-
-        /* Ignore children that are not set/remove */
-        if (child->ns != APR_XML_NS_DAV_ID
-            || (!(is_remove = strcmp(child->name, "remove") == 0)
-                && strcmp(child->name, "set") != 0)) {
-            continue;
-        }
-
-        /* make sure that a "prop" child exists for set/remove */
-        if ((prop_group = dav_find_child(child, "prop")) == NULL) {
-            dav_close_propdb(propdb);
-
-            /* undo any auto-checkout */
-            dav_auto_checkin(r, resource, 1 /*undo*/, 0 /*unlock*/, &av_info);
-
-            /* This supplies additional information for the default message. */
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "A \"prop\" element is missing inside "
-                          "the propertyupdate command.");
-            return HTTP_BAD_REQUEST;
-        }
-
-        for (one_prop = prop_group->first_child; one_prop;
-             one_prop = one_prop->next) {
-
-            ctx = (dav_prop_ctx *)apr_array_push(ctx_list);
-            ctx->propdb = propdb;
-            ctx->operation = is_remove ? DAV_PROP_OP_DELETE : DAV_PROP_OP_SET;
-            ctx->prop = one_prop;
-
-            ctx->r = r;         /* for later use by dav_prop_log_errors() */
-
-            dav_prop_validate(ctx);
-
-            if ( DAV_PROP_CTX_HAS_ERR(*ctx) ) {
-                failure = 1;
-            }
-        }
+    result = dav_get_props_ctx_list(r, propdb, doc->root, &ctx_list);
+    if (result != OK) {
+        dav_close_propdb(propdb);
+        dav_auto_checkin(r, resource, 1, 0, &av_info);
+        return result;
     }
 
-    /* ### should test that we found at least one set/remove */
-
+    if (dav_process_ctx_list(dav_prop_validate, ctx_list, 1, 0)) {
+        failure = 1;
+    }
     /* execute all of the operations */
     if (!failure && dav_process_ctx_list(dav_prop_exec, ctx_list, 1, 0)) {
         failure = 1;
@@ -2346,7 +3178,11 @@ static int dav_method_proppatch(request_rec *r)
 
     /* generate a failure/success response */
     if (failure) {
-        (void)dav_process_ctx_list(dav_prop_rollback, ctx_list, 0, 1);
+        const dav_hooks_transaction *xaction_hooks = dav_get_transaction_hooks(r);
+        if (xaction_hooks)
+            xaction_hooks->mode_set(dav_r->trans, DAV_TRANSACTION_ROLLBACK);
+        else
+            (void)dav_process_ctx_list(dav_prop_rollback, ctx_list, 0, 1);
         propstat_text = dav_failed_proppatch(r->pool, ctx_list);
     }
     else {
@@ -2354,24 +3190,62 @@ static int dav_method_proppatch(request_rec *r)
         propstat_text = dav_success_proppatch(r->pool, ctx_list);
     }
 
+    /* log any errors that occurred */
+    (void)dav_process_ctx_list(dav_prop_log_errors, ctx_list, 0, 0);
+
     /* make sure this gets closed! */
     dav_close_propdb(propdb);
 
     /* complete any auto-versioning */
     dav_auto_checkin(r, resource, failure, 0 /*unlock*/, &av_info);
 
-    /* log any errors that occurred */
-    (void)dav_process_ctx_list(dav_prop_log_errors, ctx_list, 0, 0);
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
 
     resp.href = resource->uri;
 
     /* ### should probably use something new to pass along this text... */
     resp.propresult.propstats = propstat_text;
 
+    /* set up the HTTP headers for the response */
+    if ((err = (*resource->hooks->set_headers)(r, resource)) != NULL) {
+        err = dav_push_error(r->pool, err->status, 0,
+                             "Unable to set up HTTP headers.",
+                             err);
+        return dav_handle_err(r, err, NULL);
+    }
+
     dav_send_multistatus(r, HTTP_MULTI_STATUS, &resp, doc->namespaces);
 
     /* the response has been sent. */
     return DONE;
+}
+
+static int dav_is_allow_method_proppatch(dav_request *dav_r, 
+                                         const dav_hooks_acl *acl_hook, 
+                                         const dav_principal *principal)
+{
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err;
+
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err == NULL) 
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
+
+        if(resource->exists && acl_hook != NULL) 
+            retVal = (*acl_hook->is_allow)(principal, resource, 
+                      DAV_PERMISSION_WRITE_PROPERTIES);
+    }
+    
+    return retVal;
 }
 
 static int process_mkcol_body(request_rec *r)
@@ -2383,11 +3257,15 @@ static int process_mkcol_body(request_rec *r)
 
     const char *tenc = apr_table_get(r->headers_in, "Transfer-Encoding");
     const char *lenp = apr_table_get(r->headers_in, "Content-Length");
+    const char *ctype = apr_table_get(r->headers_in, "Content-Type");
 
     /* make sure to set the Apache request fields properly. */
     r->read_body = REQUEST_NO_BODY;
     r->read_chunked = 0;
     r->remaining = 0;
+
+    if (ctype && !strcmp(ctype, "application/xml"))
+        return OK;
 
     if (tenc) {
         if (strcasecmp(tenc, "chunked")) {
@@ -2431,17 +3309,19 @@ static int process_mkcol_body(request_rec *r)
 }
 
 /* handle the MKCOL method */
-static int dav_method_mkcol(request_rec *r)
+static int dav_method_mkcol(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     int resource_state;
     dav_auto_version_info av_info;
+    apr_xml_doc *doc = NULL;
+    apr_text *propstat_text = NULL;
     const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
     dav_error *err;
     dav_error *err2;
-    int result;
+    int result, failure = 0;
     dav_dir_conf *conf;
-    dav_response *multi_status;
 
     /* handle the request body */
     /* ### this may move lower once we start processing bodies */
@@ -2452,11 +3332,13 @@ static int dav_method_mkcol(request_rec *r)
     conf = (dav_dir_conf *)ap_get_module_config(r->per_dir_config,
                                                 &dav_module);
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     if (resource->exists) {
         /* oops. something was already there! */
@@ -2468,38 +3350,120 @@ static int dav_method_mkcol(request_rec *r)
 
     resource_state = dav_get_resource_state(r, resource);
 
-    /*
-     * Check If-Headers and existing locks.
-     *
-     * Note: depth == 0 normally requires no multistatus response. However,
-     * if we pass DAV_VALIDATE_PARENT, then we could get an error on a URI
-     * other than the Request-URI, thereby requiring a multistatus.
-     *
-     * If the resource does not exist (DAV_RESOURCE_NULL), then we must
-     * check the resource *and* its parent. If the resource exists or is
-     * a locknull resource, then we check only the resource.
-     */
-    if ((err = dav_validate_request(r, resource, 0, NULL, &multi_status,
-                                    resource_state == DAV_RESOURCE_NULL ?
-                                    DAV_VALIDATE_PARENT :
-                                    DAV_VALIDATE_RESOURCE, NULL)) != NULL) {
-        /* ### add a higher-level description? */
-        return dav_handle_err(r, err, multi_status);
-    }
+    dav_bind bind = { 0 };
+    bind.cur_resource = bind.new_resource = resource;
+    err = dav_validate_request
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
+       DAV_VALIDATE_IGNORE_TARGET_LOCKS, resource_state, NULL, NULL, NULL);
+    if (err) return dav_handle_err(r, err, NULL);
+
+    resource->collection = 1;
 
     /* if versioned resource, make sure parent is checked out */
-    if ((err = dav_auto_checkout(r, resource, 1 /* parent_only */,
+    if ((err = dav_auto_checkout(r, resource, 0 /* parent_only */,
                                  &av_info)) != NULL) {
         /* ### add a higher-level description? */
         return dav_handle_err(r, err, NULL);
     }
 
-    /* try to create the collection */
-    resource->collection = 1;
-    err = (*resource->hooks->create_collection)(resource);
+    /* create the collection if auto versioning code didn't already create it */
+    if (!resource->exists)
+	 err = (*resource->hooks->create_collection)(resource);
+
+    if ((result = ap_xml_parse_input(r, &doc)) != OK) {
+        return result;
+    }
+    /* parse the request body */
+    if (doc) {
+        dav_propdb *propdb;
+        apr_array_header_t *ctx_list;
+        int i;
+
+        if (!dav_validate_root(doc, "mkcol")) {
+            /* undo any auto-checkout */
+            dav_auto_checkin(r, resource, 1 /*undo*/, 0 /*unlock*/, &av_info);
+
+            /* This supplies additional information for the default message. */
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "The request body does not contain "
+                          "a \"mkcol\" element.");
+            return HTTP_BAD_REQUEST;
+        }
+
+        if ((err = dav_open_propdb(r, NULL, resource, 0, doc->namespaces,
+                                   &propdb)) != NULL) {
+            /* undo any auto-checkout */
+            dav_auto_checkin(r, resource, 1 /*undo*/, 0 /*unlock*/, &av_info);
+
+            err = dav_push_error(r->pool, HTTP_INTERNAL_SERVER_ERROR, 0,
+                                 apr_psprintf(r->pool,
+                                              "Could not open the property "
+                                              "database for %s.",
+                                              ap_escape_html(r->pool, r->uri)),
+                                 err);
+            return dav_handle_err(r, err, NULL);
+        }
+        /* ### what to do about closing the propdb on server failure? */
+
+        /* ### validate "live" properties */
+        result = dav_get_props_ctx_list(r, propdb, doc->root, &ctx_list);
+        if (result != OK) {
+            dav_close_propdb(propdb);
+            dav_auto_checkin(r, resource, 1, 0, &av_info);
+            return result;
+        }
+
+        for (i = 0; i < ctx_list->nelts; i++) {
+            dav_prop_ctx *ctx = (dav_prop_ctx*)ctx_list->elts + i;
+            if (ctx->prop->ns == APR_XML_NS_DAV_ID &&
+                !strcmp(ctx->prop->name, "resourcetype")) {
+                int resourcetype = DAV_RESOURCE_TYPE_UNKNOWN;
+                ctx->no_process = 1;
+                if (dav_find_child(ctx->prop, "activity"))
+                    resourcetype = DAV_RESOURCE_TYPE_ACTIVITY;
+                else if (dav_find_child(ctx->prop, "principal"))
+                    resourcetype = DAV_RESOURCE_TYPE_PRINCIPAL;
+                else
+                    ctx->no_process = 0;
+
+                if (resourcetype != DAV_RESOURCE_TYPE_UNKNOWN)
+                    err = (*resource->hooks->set_collection_type)(resource, resourcetype);
+                if (err) return dav_handle_err(r, err, NULL);
+                break;
+            }
+        }
+
+        if (dav_process_ctx_list(dav_prop_validate, ctx_list, 1, 0)) {
+            failure = 1;
+        }
+        /* execute all of the operations */
+        if (!failure && dav_process_ctx_list(dav_prop_exec, ctx_list, 1, 0)) {
+            failure = 1;
+        }
+
+        /* generate a failure/success response */
+        if (failure) {
+            const dav_hooks_transaction *xaction_hooks = dav_get_transaction_hooks(r);
+            if (xaction_hooks)
+                xaction_hooks->mode_set(dav_r->trans, DAV_TRANSACTION_ROLLBACK);
+            else
+                (void)dav_process_ctx_list(dav_prop_rollback, ctx_list, 0, 1);
+            propstat_text = dav_failed_proppatch(r->pool, ctx_list);
+        }
+        else {
+            (void)dav_process_ctx_list(dav_prop_commit, ctx_list, 0, 0);
+            propstat_text = dav_success_proppatch(r->pool, ctx_list);
+        }
+
+        /* log any errors that occurred */
+        (void)dav_process_ctx_list(dav_prop_log_errors, ctx_list, 0, 0);
+
+        /* make sure this gets closed! */
+        dav_close_propdb(propdb);
+    }
 
     /* restore modifiability of parent back to what it was */
-    err2 = dav_auto_checkin(r, NULL, err != NULL /* undo if error */,
+    err2 = dav_auto_checkin(r, resource, err != NULL /* undo if error */,
                             0 /*unlock*/, &av_info);
 
     /* check for errors now */
@@ -2546,37 +3510,120 @@ static int dav_method_mkcol(request_rec *r)
         }
     }
 
-    /* return an appropriate response (HTTP_CREATED) */
-    return dav_created(r, NULL, "Collection", 0);
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
+    if (doc) {
+        apr_text *t = NULL;
+        apr_bucket_brigade *bb = apr_brigade_create
+          (r->pool, r->connection->bucket_alloc);
+        ap_filter_t *output = r->output_filters;
+
+        if (failure)
+            r->status = HTTP_FAILED_DEPENDENCY;
+        else
+            r->status = HTTP_CREATED;
+        ap_set_content_type(r, DAV_XML_CONTENT_TYPE);
+
+        /* Send the headers and actual response now... */
+        ap_fputs(output, bb, DAV_XML_HEADER DEBUG_CR
+                 "<D:mkcol-response xmlns:D=\"DAV:\"");
+
+        if (doc->namespaces != NULL) {
+            int i;
+            for (i = doc->namespaces->nelts; i--; )
+                ap_fprintf(output, bb, " xmlns:ns%d=\"%s\"", i,
+                           APR_XML_GET_URI_ITEM(doc->namespaces, i));
+        }
+        ap_fputs(output, bb, ">" DEBUG_CR);
+
+        for (t = propstat_text; t; t = t->next) {
+            ap_fputs(output, bb, t->text);
+        }
+        ap_fputs(output, bb, "</D:mkcol-response>" DEBUG_CR);
+        APR_BRIGADE_INSERT_TAIL
+          (bb, apr_bucket_eos_create(r->connection->bucket_alloc));
+
+        /* deliver whatever might be remaining in the brigade */
+        ap_pass_brigade(output, bb);
+
+        return DONE;
+    } else {
+        /* return an appropriate response (HTTP_CREATED) */
+        return dav_created(r, NULL, "Collection", 0);
+    }
+}
+
+static int dav_is_allow_method_mkcol(dav_request *dav_r, 
+                                     const dav_hooks_acl *acl_hook, 
+                                     const dav_principal *principal)
+{
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err;
+
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+		
+    if (err != NULL)
+        return retVal;
+			   
+    /* Set the resolved resource in context, so that it can be reused */
+    dav_r->resource = resource;
+
+    if (acl_hook != NULL) {
+	const dav_hooks_repository *repos_hooks = resource->hooks;
+	dav_resource *parent_resource = NULL;
+	
+        err = (*repos_hooks->get_parent_resource)(resource, &parent_resource);
+	
+        if (err == NULL && parent_resource && parent_resource->exists ) {
+	    retVal = (*acl_hook->is_allow)(principal, parent_resource, 
+                                           DAV_PERMISSION_BIND);
+
+            /* percolate the need-privileges error tag */
+            if(!retVal) resource->err = parent_resource->err; 
+	}    
+    }
+
+    
+    return retVal;
 }
 
 /* handle the COPY and MOVE methods */
-static int dav_method_copymove(request_rec *r, int is_move)
+static int dav_method_copymove(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    int is_move = (r->method_number == M_MOVE) ;
+    dav_resource *resource = dav_r->resource;
     dav_resource *resnew;
+    request_rec *rnew;
     dav_auto_version_info src_av_info = { 0 };
     dav_auto_version_info dst_av_info = { 0 };
     const char *body;
     const char *dest;
     dav_error *err;
-    dav_error *err2;
+    dav_error *err2 = NULL;
     dav_error *err3;
     dav_response *multi_response;
-    dav_lookup_result lookup;
     int is_dir;
     int overwrite;
     int depth;
     int result;
     dav_lockdb *lockdb;
-    int replace_dest;
     int resnew_state;
+    int resource_state;
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, !is_move /* label_allowed */,
-                           0 /* use_checked_in */, &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, !is_move /* label_allowed */,
+                               0 /* use_checked_in */, &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
@@ -2585,7 +3632,8 @@ static int dav_method_copymove(request_rec *r, int is_move)
 
     /* If not a file or collection resource, COPY/MOVE not allowed */
     /* ### allow COPY/MOVE of DeltaV resource types */
-    if (resource->type != DAV_RESOURCE_TYPE_REGULAR) {
+    if (resource->type != DAV_RESOURCE_TYPE_REGULAR &&
+	 !(!is_move && resource->type == DAV_RESOURCE_TYPE_VERSION && !resource->collection)) {
         body = apr_psprintf(r->pool,
                             "Cannot COPY/MOVE resource %s.",
                             ap_escape_html(r->pool, r->uri));
@@ -2609,45 +3657,15 @@ static int dav_method_copymove(request_rec *r, int is_move)
         return HTTP_BAD_REQUEST;
     }
 
-    lookup = dav_lookup_uri(dest, r, 1 /* must_be_absolute */);
-    if (lookup.rnew == NULL) {
-        if (lookup.err.status == HTTP_BAD_REQUEST) {
-            /* This supplies additional information for the default message. */
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "%s", lookup.err.desc);
-            return HTTP_BAD_REQUEST;
-        }
+    /* Resolve destination resource */
+    err = dav_get_resource_from_uri(dest, r, 0, &rnew, &resnew);
+    if (err != NULL)
+        return dav_handle_err(r, err, NULL);
 
-        /* ### this assumes that dav_lookup_uri() only generates a status
-         * ### that Apache can provide a status line for!! */
-
-        return dav_error_response(r, lookup.err.status, lookup.err.desc);
-    }
-    if (lookup.rnew->status != HTTP_OK) {
-        const char *auth = apr_table_get(lookup.rnew->err_headers_out,
-                                        "WWW-Authenticate");
-        if (lookup.rnew->status == HTTP_UNAUTHORIZED && auth != NULL) {
-            /* propagate the WWW-Authorization header up from the
-             * subreq so the client sees it. */
-            apr_table_set(r->err_headers_out, "WWW-Authenticate",
-                          apr_pstrdup(r->pool, auth));
-        }
-
-        /* ### how best to report this... */
-        return dav_error_response(r, lookup.rnew->status,
-                                  "Destination URI had an error.");
-    }
-
-    if (dav_get_provider(lookup.rnew) == NULL) {
+    if (dav_get_provider(rnew) == NULL) {
         return dav_error_response(r, HTTP_METHOD_NOT_ALLOWED,
                                   "DAV not enabled for Destination URI.");
     }
-
-    /* Resolve destination resource */
-    err = dav_get_resource(lookup.rnew, 0 /* label_allowed */,
-                           0 /* use_checked_in */, &resnew);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
 
     /* are the two resources handled by the same repository? */
     if (resource->hooks != resnew->hooks) {
@@ -2673,6 +3691,11 @@ static int dav_method_copymove(request_rec *r, int is_move)
                                   "Destination is not empty and "
                                   "Overwrite is not \"T\"");
     }
+
+    /* if dest is a checked-in vcr or a version resource */
+    if (resnew->exists && ( resnew->type == DAV_RESOURCE_TYPE_VERSION))
+      return dav_error_response(r, HTTP_PRECONDITION_FAILED,
+				"Destination is not writiable");
 
     /* are the source and destination the same? */
     if ((*resource->hooks->is_same_resource)(resource, resnew)) {
@@ -2703,90 +3726,27 @@ static int dav_method_copymove(request_rec *r, int is_move)
         return HTTP_BAD_REQUEST;
     }
 
-    /*
-     * Check If-Headers and existing locks for each resource in the source
-     * if we are performing a MOVE. We will return a 424 response with a
-     * DAV:multistatus body. The multistatus responses will contain the
-     * information about any resource that fails the validation.
-     *
-     * We check the parent resource, too, since this is a MOVE. Moving the
-     * resource effectively removes it from the parent collection, so we
-     * must ensure that we have met the appropriate conditions.
-     *
-     * If a problem occurs with the Request-URI itself, then a plain error
-     * (rather than a multistatus) will be returned.
-     */
-    if (is_move
-        && (err = dav_validate_request(r, resource, depth, NULL,
-                                       &multi_response,
-                                       DAV_VALIDATE_PARENT
-                                       | DAV_VALIDATE_USE_424,
-                                       NULL)) != NULL) {
-        err = dav_push_error(r->pool, err->status, 0,
-                             apr_psprintf(r->pool,
-                                          "Could not MOVE %s due to a failed "
-                                          "precondition on the source "
-                                          "(e.g. locks).",
-                                          ap_escape_html(r->pool, r->uri)),
-                             err);
-        return dav_handle_err(r, err, multi_response);
-    }
-
-    /*
-     * Check If-Headers and existing locks for destination. Note that we
-     * use depth==infinity since the target (hierarchy) will be deleted
-     * before the move/copy is completed.
-     *
-     * Note that we are overwriting the target, which implies a DELETE, so
-     * we are subject to the error/response rules as a DELETE. Namely, we
-     * will return a 424 error if any of the validations fail.
-     * (see dav_method_delete() for more information)
-     */
-    if ((err = dav_validate_request(lookup.rnew, resnew, DAV_INFINITY, NULL,
-                                    &multi_response,
-                                    DAV_VALIDATE_PARENT
-                                    | DAV_VALIDATE_USE_424, NULL)) != NULL) {
-        err = dav_push_error(r->pool, err->status, 0,
-                             apr_psprintf(r->pool,
-                                          "Could not MOVE/COPY %s due to a "
-                                          "failed precondition on the "
-                                          "destination (e.g. locks).",
-                                          ap_escape_html(r->pool, r->uri)),
-                             err);
-        return dav_handle_err(r, err, multi_response);
-    }
-
-    if (is_dir
-        && depth == DAV_INFINITY
-        && (*resource->hooks->is_parent_resource)(resource, resnew)) {
-        /* Supply some text for the error response body. */
-        return dav_error_response(r, HTTP_FORBIDDEN,
-                                  "Source collection contains the "
-                                  "Destination.");
-
-    }
-    if (is_dir
-        && (*resnew->hooks->is_parent_resource)(resnew, resource)) {
-        /* The destination must exist (since it contains the source), and
-         * a condition above implies Overwrite==T. Obviously, we cannot
-         * delete the Destination before the MOVE/COPY, as that would
-         * delete the Source.
-         */
-
-        /* Supply some text for the error response body. */
-        return dav_error_response(r, HTTP_FORBIDDEN,
-                                  "Destination collection contains the Source "
-                                  "and Overwrite has been specified.");
-    }
-
-    /* ### for now, we don't need anything in the body */
-    if ((result = ap_discard_request_body(r)) != OK) {
-        return result;
-    }
-
     if ((err = dav_open_lockdb(r, 0, &lockdb)) != NULL) {
         /* ### add a higher-level description? */
         return dav_handle_err(r, err, NULL);
+    }
+
+    dav_lock *lrl_to_refresh=NULL, *lrl_to_delete=NULL, *lock_i=NULL;
+    dav_bind bind = { 0 }, unbind = { 0 };
+    bind.cur_resource = resnew;
+    bind.new_resource = resource;
+    if (is_move)
+        unbind.cur_resource = resource;
+    resource_state = dav_get_resource_state(r, resource);
+    err = dav_validate_request
+      (r, depth, lockdb, &bind, is_move? &unbind : NULL,
+       DAV_VALIDATE_BIND | (is_move ? DAV_VALIDATE_UNBIND : DAV_VALIDATE_IGNORE_TARGET_LOCKS),
+       resource_state, &multi_response, &lrl_to_refresh, &lrl_to_delete);
+    if (err) return dav_handle_err(r, err, multi_response);
+    
+    /* ### for now, we don't need anything in the body */
+    if ((result = ap_discard_request_body(r)) != OK) {
+        return result;
     }
 
     /* remove any locks from the old resources */
@@ -2822,45 +3782,23 @@ static int dav_method_copymove(request_rec *r, int is_move)
      * Remember the initial state of the destination, so the lock system
      * can be notified as to how it changed.
      */
-    resnew_state = dav_get_resource_state(lookup.rnew, resnew);
+    resnew_state = dav_get_resource_state(rnew, resnew);
 
-    /* In a MOVE operation, the destination is replaced by the source.
-     * In a COPY operation, if the destination exists, is under version
-     * control, and is the same resource type as the source,
-     * then it should not be replaced, but modified to be a copy of
-     * the source.
+    /* For a MOVE operation, do auto-versioning for parent collection
+     * For a COPY operation, do auto-versioning for destination and its parent
      */
-    if (!resnew->exists)
-        replace_dest = 0;
-    else if (is_move || !resource->versioned)
-        replace_dest = 1;
-    else if (resource->type != resnew->type)
-        replace_dest = 1;
-    else if ((resource->collection == 0) != (resnew->collection == 0))
-        replace_dest = 1;
-    else
-        replace_dest = 0;
-
-    /* If the destination must be created or replaced,
-     * make sure the parent collection is writable
-     */
-    if (!resnew->exists || replace_dest) {
-        if ((err = dav_auto_checkout(r, resnew, 1 /*parent_only*/,
-                                     &dst_av_info)) != NULL) {
-            /* could not make destination writable:
-             * if move, restore state of source parent
-             */
-            if (is_move) {
-                (void)dav_auto_checkin(r, NULL, 1 /* undo */,
-                                       0 /*unlock*/, &src_av_info);
-            }
-
-            if (lockdb != NULL)
-                (*lockdb->hooks->close_lockdb)(lockdb);
-
-            /* ### add a higher-level description? */
-            return dav_handle_err(r, err, NULL);
-        }
+    if (!(is_move&&!resource->versioned) && 
+        (err=dav_auto_checkout(r, resnew, is_move, &dst_av_info))) {
+        /* could not make destination writable:
+         * restore state of source and its parent
+         */
+        (void)dav_auto_checkin(r, NULL, 1 /* undo */,
+			       0 /*unlock*/, &src_av_info);
+        if (lockdb != NULL)
+            (*lockdb->hooks->close_lockdb)(lockdb);
+        
+        /* ### add a higher-level description? */
+        return dav_handle_err(r, err, NULL);
     }
 
     /* If source and destination parents are the same, then
@@ -2876,12 +3814,6 @@ static int dav_method_copymove(request_rec *r, int is_move)
         dst_av_info.parent_resource = src_av_info.parent_resource;
     }
 
-    /* If destination is being replaced, remove it first
-     * (we know Ovewrite must be TRUE). Then try to copy/move the resource.
-     */
-    if (replace_dest)
-        err = (*resnew->hooks->remove_resource)(resnew, &multi_response);
-
     if (err == NULL) {
         if (is_move)
             err = (*resource->hooks->move_resource)(resource, resnew,
@@ -2892,8 +3824,9 @@ static int dav_method_copymove(request_rec *r, int is_move)
     }
 
     /* perform any auto-versioning cleanup */
-    err2 = dav_auto_checkin(r, NULL, err != NULL /* undo if error */,
-                            0 /*unlock*/, &dst_av_info);
+    if( !(is_move && !resource->versioned))
+	err2 = dav_auto_checkin(r, is_move?NULL:resnew, err != NULL /* undo if error */,
+				0 /*unlock*/, &dst_av_info);
 
     if (is_move) {
         err3 = dav_auto_checkin(r, NULL, err != NULL /* undo if error */,
@@ -2938,6 +3871,16 @@ static int dav_method_copymove(request_rec *r, int is_move)
     /* propagate any indirect locks at the target */
     if (lockdb != NULL) {
 
+        for (lock_i = lrl_to_delete; lock_i && !err; lock_i = lock_i->next)
+            err = (*lockdb->hooks->remove_lock)(lockdb, NULL, lock_i->locktoken);
+        for (lock_i = lrl_to_refresh; lock_i && !err; lock_i = lock_i->next)
+            err = (*lockdb->hooks->remove_lock)(lockdb, NULL, lock_i->locktoken);
+
+        if (!err && lrl_to_refresh)
+            err = (*lockdb->hooks->refresh_locks)(lockdb, resource, lrl_to_refresh, 1);
+
+        if (err) return dav_handle_err(r, err, NULL);
+
         /* notify lock system that we have created/replaced a resource */
         err = dav_notify_created(r, lockdb, resnew, resnew_state, depth);
 
@@ -2954,18 +3897,258 @@ static int dav_method_copymove(request_rec *r, int is_move)
         }
     }
 
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
     /* return an appropriate response (HTTP_CREATED or HTTP_NO_CONTENT) */
-    return dav_created(r, lookup.rnew->uri, "Destination",
+    return dav_created(r, rnew->uri, "Destination",
                        resnew_state == DAV_RESOURCE_EXISTS);
+}
+
+static int dav_is_allow_method_copy(dav_request *dav_r, 
+                                    const dav_hooks_acl *acl_hook, 
+                                    const dav_principal *principal)
+{
+    request_rec *r = dav_r->request, *rnew;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_resource *resnew;
+    const char *dest;
+    dav_error *err = NULL;
+
+    /* Ask repository module to resolve the resource */
+    err = dav_get_resource(r, 1 /* label_allowed */,
+                           0 /* use_checked_in */, &resource);
+    if (err != NULL)
+        return retVal;
+
+    /* Set the resolved resource in context, so that it can be reused */
+    dav_r->resource = resource;
+
+    if (!resource->exists)
+        return retVal;
+
+    /* If not a file or collection resource, COPY/MOVE not allowed */
+    /* ### allow COPY/MOVE of DeltaV resource types */
+    if (resource->type != DAV_RESOURCE_TYPE_REGULAR)
+        return retVal;
+
+    /* get the destination URI */
+    dest = apr_table_get(r->headers_in, "Destination");
+    if (dest == NULL) {
+        /* Look in headers provided by Netscape's Roaming Profiles */
+        const char *nscp_host = apr_table_get(r->headers_in, "Host");
+        const char *nscp_path = apr_table_get(r->headers_in, "New-uri");
+
+        if (nscp_host != NULL && nscp_path != NULL)
+            dest = apr_psprintf(r->pool, "http://%s%s", nscp_host, nscp_path);
+    }
+    if (dest == NULL)
+        return retVal;
+
+    /* Resolve destination resource */
+    err = dav_get_resource_from_uri(dest, r, 0, &rnew, &resnew);
+    if (err != NULL)
+        return retVal;
+
+    /* are the source and destination the same? */
+    if ((*resource->hooks->is_same_resource)(resource, resnew)) {
+        /* Supply some text for the error response body. */
+        return retVal;
+
+    }
+
+    if (acl_hook != NULL) {
+	const dav_hooks_repository *repos_hooks = resource->hooks;
+	dav_resource *parent_new_resource = NULL;
+	
+	if (err == NULL)
+    	    err = (*repos_hooks->get_parent_resource)(resnew, &parent_new_resource);
+	
+        if (err == NULL && parent_new_resource && parent_new_resource->exists ) {
+	    int is_acl_allow = 0;
+	    is_acl_allow = (*acl_hook->is_allow)(principal, resource, 
+                                                 DAV_PERMISSION_READ);
+	    
+	    if (resnew->exists) {
+
+                int overwrite = dav_get_overwrite(r);
+
+                if(overwrite > 0) {
+                    if ((resnew->collection == 0) ^ (resource->collection == 0)) {
+                        /* If resourcetype is being changed, check for *bind priv */
+                        is_acl_allow = 
+                          is_acl_allow
+                          && ((*acl_hook->is_allow)(principal, parent_new_resource, 
+                                                    DAV_PERMISSION_UNBIND))
+                          && ((*acl_hook->is_allow)(principal, parent_new_resource, 
+                                                    DAV_PERMISSION_BIND));
+                        if (!is_acl_allow) err = parent_new_resource->err;
+                    } else {
+                        is_acl_allow = 
+                          is_acl_allow 
+                          && (*acl_hook->is_allow)(principal, resnew, 
+                                                 DAV_PERMISSION_WRITE_CONTENT);
+                        is_acl_allow = 
+                          is_acl_allow 
+                          && (*acl_hook->is_allow)(principal, resnew, 
+                                                 DAV_PERMISSION_WRITE_PROPERTIES);
+                        if(!is_acl_allow) err = resnew->err;
+                    }
+                }
+                else {
+                    /* if Overwrite is F we only need to check read on destination */
+                    is_acl_allow =
+                      is_acl_allow
+                      && ((*acl_hook->is_allow)(principal, parent_new_resource,
+                                                DAV_PERMISSION_READ));
+
+                    if (!is_acl_allow) err = parent_new_resource->err;
+                }
+	    }
+	    else {
+	        is_acl_allow = 
+                    is_acl_allow 
+                    && (*acl_hook->is_allow)(principal, parent_new_resource, 
+                                             DAV_PERMISSION_BIND);
+                if(!is_acl_allow) err = parent_new_resource->err;
+            }
+	
+	    if (!is_acl_allow && resource->err == NULL) {
+                resource->err = err;
+	    }
+
+            retVal = is_acl_allow;
+	}
+    }
+    
+    if (resource->err) {
+        const char *auth = apr_table_get(rnew->err_headers_out,
+                                         "WWW-Authenticate");
+        if (resource->err->status == HTTP_UNAUTHORIZED && auth != NULL) {
+            /* propagate the WWW-Authorization header up from the
+             * subreq so the client sees it. */
+            apr_table_set(r->err_headers_out, "WWW-Authenticate",
+                          apr_pstrdup(r->pool, auth));
+        }
+    }
+
+    return retVal;
+}
+
+static int dav_is_allow_method_move(dav_request *dav_r, 
+                                    const dav_hooks_acl *acl_hook, 
+                                    const dav_principal *principal)
+{
+    request_rec *r = dav_r->request, *rnew = NULL;
+    int retVal = TRUE;
+    dav_resource *resource = NULL, *resnew = NULL;
+    const char *dest;
+    dav_error *err = NULL;
+
+    /* Ask repository module to resolve the resource */
+    err = dav_get_resource(r, 0 /* label_allowed */,
+                           0 /* use_checked_in */, &resource);
+    if (err != NULL)
+        return retVal;
+
+    /* Set the resolved resource in context, so that it can be reused */
+    dav_r->resource = resource;
+
+    if (!resource->exists)
+        return retVal;
+
+    /* If not a file or collection resource, COPY/MOVE not allowed */
+    /* ### allow COPY/MOVE of DeltaV resource types */
+    if (resource->type != DAV_RESOURCE_TYPE_REGULAR)
+        return retVal;
+
+    /* get the destination URI */
+    dest = apr_table_get(r->headers_in, "Destination");
+    if (dest == NULL) {
+        /* Look in headers provided by Netscape's Roaming Profiles */
+        const char *nscp_host = apr_table_get(r->headers_in, "Host");
+        const char *nscp_path = apr_table_get(r->headers_in, "New-uri");
+
+        if (nscp_host != NULL && nscp_path != NULL)
+            dest = apr_psprintf(r->pool, "http://%s%s", nscp_host, nscp_path);
+    }
+    if (dest == NULL)
+        return retVal;
+
+    /* Resolve destination resource */
+    err = dav_get_resource_from_uri(dest, r, 0 , &rnew, &resnew);
+    if (err != NULL)
+        return retVal;
+
+    /* are the source and destination the same? */
+    if ((*resource->hooks->is_same_resource)(resource, resnew)) {
+        /* Supply some text for the error response body. */
+        return retVal;
+
+    }
+
+    if (acl_hook != NULL) {
+	const dav_hooks_repository *repos_hooks = resource->hooks;
+	dav_resource *parent_resource = NULL;
+	dav_resource *parent_new_resource = NULL;
+	
+        err = (*repos_hooks->get_parent_resource)(resource, &parent_resource);
+	
+	if (err == NULL)
+    	    err = (*repos_hooks->get_parent_resource)(resnew, &parent_new_resource);
+	
+        if (err == NULL && parent_resource && parent_new_resource 
+            && parent_resource->exists && parent_new_resource->exists) {
+	    int is_acl_allow = 0;
+	    is_acl_allow = (*acl_hook->is_allow)(principal, parent_resource, 
+                                                 DAV_PERMISSION_UNBIND);
+
+	    is_acl_allow = 
+                is_acl_allow 
+                && (*acl_hook->is_allow)(principal, parent_new_resource, 
+                                         DAV_PERMISSION_BIND);
+	    
+	    if (resnew->exists)
+	        is_acl_allow = 
+                    is_acl_allow 
+                    && (*acl_hook->is_allow)(principal, parent_new_resource, 
+                                             DAV_PERMISSION_UNBIND);
+	
+	    if (!is_acl_allow) {
+                if(parent_resource->err)
+                    resource->err = parent_resource->err;
+                else
+                    resource->err = parent_new_resource->err;
+	    }
+            retVal = is_acl_allow;
+	}    
+    }
+
+    if (resource->err) {
+        const char *auth = apr_table_get(rnew->err_headers_out,
+                                         "WWW-Authenticate");
+        if (resource->err->status == HTTP_UNAUTHORIZED && auth != NULL) {
+            /* propagate the WWW-Authorization header up from the
+             * subreq so the client sees it. */
+            apr_table_set(r->err_headers_out, "WWW-Authenticate",
+                          apr_pstrdup(r->pool, auth));
+        }
+    }
+
+    return retVal;
 }
 
 /* dav_method_lock:  Handler to implement the DAV LOCK method
  *    Returns appropriate HTTP_* response.
  */
-static int dav_method_lock(request_rec *r)
+static int dav_method_lock(dav_request *dav_r)
 {
+    request_rec *r = dav_r->request;
     dav_error *err;
-    dav_resource *resource;
+    dav_resource *resource = dav_r->resource;
     const dav_hooks_locks *locks_hooks;
     int result;
     int depth;
@@ -2975,14 +4158,19 @@ static int dav_method_lock(request_rec *r)
     dav_response *multi_response = NULL;
     dav_lockdb *lockdb;
     int resource_state;
+    const dav_hooks_transaction *transaction_hooks 
+      = DAV_GET_HOOKS_TRANSACTION(r);
 
     /* If no locks provider, decline the request */
     locks_hooks = DAV_GET_HOOKS_LOCKS(r);
     if (locks_hooks == NULL)
         return DECLINED;
 
-    if ((result = ap_xml_parse_input(r, &doc)) != OK)
-        return result;
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if ((result = ap_xml_parse_input(r, &doc)) != OK)
+            return result;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
+    }
 
     depth = dav_get_depth(r, DAV_INFINITY);
     if (depth != 0 && depth != DAV_INFINITY) {
@@ -2991,11 +4179,15 @@ static int dav_method_lock(request_rec *r)
         return HTTP_BAD_REQUEST;
     }
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
+
+    resource_state = dav_get_resource_state(r, resource);
 
     /*
      * Open writable. Unless an error occurs, we'll be
@@ -3017,30 +4209,17 @@ static int dav_method_lock(request_rec *r)
         lock->auth_user = apr_pstrdup(r->pool, r->user);
     }
 
-    resource_state = dav_get_resource_state(r, resource);
-
-    /*
-     * Check If-Headers and existing locks.
-     *
-     * If this will create a locknull resource, then the LOCK will affect
-     * the parent collection (much like a PUT/MKCOL). For that case, we must
-     * validate the parent resource's conditions.
-     */
-    if ((err = dav_validate_request(r, resource, depth, NULL, &multi_response,
-                                    (resource_state == DAV_RESOURCE_NULL
-                                     ? DAV_VALIDATE_PARENT
-                                     : DAV_VALIDATE_RESOURCE)
-                                    | (new_lock_request ? lock->scope : 0)
-                                    | DAV_VALIDATE_ADD_LD,
-                                    lockdb)) != OK) {
-        err = dav_push_error(r->pool, err->status, 0,
-                             apr_psprintf(r->pool,
-                                          "Could not LOCK %s due to a failed "
-                                          "precondition (e.g. other locks).",
-                                          ap_escape_html(r->pool, r->uri)),
-                             err);
-        goto error;
+    dav_bind bind = { 0 };
+    bind.cur_resource = bind.new_resource = resource;
+    int flags = 0;
+    if (new_lock_request) {
+        flags = DAV_VALIDATE_NEW_LOCK | lock->scope;
+        if (resource_state == DAV_RESOURCE_NULL)
+            flags = flags | DAV_VALIDATE_PARENT;
     }
+    err = dav_validate_request
+      (r, depth, lockdb, &bind, NULL, flags, resource_state, &multi_response, NULL, NULL);
+    if (err) goto error;
 
     if (new_lock_request == 0) {
         dav_locktoken_list *ltl;
@@ -3065,9 +4244,16 @@ static int dav_method_lock(request_rec *r)
             goto error;
         }
 
-        if ((err = (*locks_hooks->refresh_locks)(lockdb, resource, ltl,
-                                                 dav_get_timeout(r),
-                                                 &lock)) != NULL) {
+        if (ltl && ltl->next) {
+            err = dav_new_error(r->pool, HTTP_BAD_REQUEST, 0,
+                                "Only one lock can be submitted for refreshing a lock");
+            goto error;
+        }
+
+        lock = apr_pcalloc(r->pool, sizeof(*lock));
+        lock->locktoken = ltl->locktoken;
+        if ((err = (*locks_hooks->refresh_locks)(lockdb, resource, lock,
+                                                 dav_get_timeout(r))) != NULL) {
             /* ### add a higher-level description to err? */
             goto error;
         }
@@ -3100,7 +4286,12 @@ static int dav_method_lock(request_rec *r)
 
     (*locks_hooks->close_lockdb)(lockdb);
 
-    r->status = HTTP_OK;
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
+    r->status = (resource_state != DAV_RESOURCE_NULL? HTTP_OK : HTTP_CREATED);
     ap_set_content_type(r, DAV_XML_CONTENT_TYPE);
 
     ap_rputs(DAV_XML_HEADER DEBUG_CR "<D:prop xmlns:D=\"DAV:\">" DEBUG_CR, r);
@@ -3120,21 +4311,63 @@ static int dav_method_lock(request_rec *r)
 
   error:
     (*locks_hooks->close_lockdb)(lockdb);
+    transaction_hooks->mode_set(dav_r->trans, DAV_TRANSACTION_ROLLBACK);
     return dav_handle_err(r, err, multi_response);
+}
+
+static int dav_is_allow_method_lock(dav_request *dav_r, 
+                                    const dav_hooks_acl *acl_hook, 
+                                    const dav_principal *principal)
+{
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err;
+
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+    
+    if (err == NULL)
+    /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
+
+    if (err == NULL && resource->exists && acl_hook != NULL) 
+    {
+	int is_acl_allow = 0;
+        
+	if (resource->exists)
+	    is_acl_allow = (*acl_hook->is_allow)(principal, resource, 
+                                                 DAV_PERMISSION_WRITE);
+	else {
+	    const dav_hooks_repository *repos_hooks = resource->hooks;
+	    dav_resource *parent_resource = NULL;
+	
+	    err = (*repos_hooks->get_parent_resource)(resource, &parent_resource);
+	
+	    if (err == NULL && parent_resource && parent_resource->exists)
+		is_acl_allow = (*acl_hook->is_allow)(principal, parent_resource, 
+                                                     DAV_PERMISSION_BIND);
+	    
+	    if (!is_acl_allow && resource->err == NULL) {
+                resource->err = parent_resource->err;
+	    }
+	}
+	retVal = is_acl_allow;
+    }
+
+    return retVal;
 }
 
 /* dav_method_unlock:  Handler to implement the DAV UNLOCK method
  *    Returns appropriate HTTP_* response.
  */
-static int dav_method_unlock(request_rec *r)
+static int dav_method_unlock(dav_request *dav_r)
 {
+    request_rec *r = dav_r->request;
     dav_error *err;
-    dav_resource *resource;
+    dav_resource *resource = dav_r->resource;
     const dav_hooks_locks *locks_hooks;
     int result;
-    const char *const_locktoken_txt;
-    char *locktoken_txt;
-    dav_locktoken *locktoken = NULL;
     int resource_state;
     dav_response *multi_response;
 
@@ -3143,66 +4376,24 @@ static int dav_method_unlock(request_rec *r)
     if (locks_hooks == NULL)
         return DECLINED;
 
-    if ((const_locktoken_txt = apr_table_get(r->headers_in,
-                                             "Lock-Token")) == NULL) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Unlock failed (%s):  "
-                      "No Lock-Token specified in header", r->filename);
-        return HTTP_BAD_REQUEST;
-    }
 
-    locktoken_txt = apr_pstrdup(r->pool, const_locktoken_txt);
-    if (locktoken_txt[0] != '<') {
-        /* ### should provide more specifics... */
-        return HTTP_BAD_REQUEST;
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
     }
-    locktoken_txt++;
-
-    if (locktoken_txt[strlen(locktoken_txt) - 1] != '>') {
-        /* ### should provide more specifics... */
-        return HTTP_BAD_REQUEST;
-    }
-    locktoken_txt[strlen(locktoken_txt) - 1] = '\0';
-
-    if ((err = (*locks_hooks->parse_locktoken)(r->pool, locktoken_txt,
-                                               &locktoken)) != NULL) {
-        err = dav_push_error(r->pool, HTTP_BAD_REQUEST, 0,
-                             apr_psprintf(r->pool,
-                                          "The UNLOCK on %s failed -- an "
-                                          "invalid lock token was specified "
-                                          "in the \"If:\" header.",
-                                          ap_escape_html(r->pool, r->uri)),
-                             err);
-        return dav_handle_err(r, err, NULL);
-    }
-
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
 
     resource_state = dav_get_resource_state(r, resource);
 
-    /*
-     * Check If-Headers and existing locks.
-     *
-     * Note: depth == 0 normally requires no multistatus response. However,
-     * if we pass DAV_VALIDATE_PARENT, then we could get an error on a URI
-     * other than the Request-URI, thereby requiring a multistatus.
-     *
-     * If the resource is a locknull resource, then the UNLOCK will affect
-     * the parent collection (much like a delete). For that case, we must
-     * validate the parent resource's conditions.
-     */
-    if ((err = dav_validate_request(r, resource, 0, locktoken,
-                                    &multi_response,
-                                    resource_state == DAV_RESOURCE_LOCK_NULL
-                                    ? DAV_VALIDATE_PARENT
-                                    : DAV_VALIDATE_RESOURCE, NULL)) != NULL) {
-        /* ### add a higher-level description? */
-        return dav_handle_err(r, err, multi_response);
-    }
+    dav_bind bind = { 0 };
+    dav_lock *lock_to_remove;
+    bind.cur_resource = bind.new_resource = resource;
+    err = dav_validate_request
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_UNLOCK, resource_state,
+       &multi_response, NULL, &lock_to_remove);
+    if (err) return dav_handle_err(r, err, multi_response);
 
     /* ### RFC 2518 s. 8.11: If this resource is locked by locktoken,
      *     _all_ resources locked by locktoken are released.  It does not say
@@ -3212,16 +4403,54 @@ static int dav_method_unlock(request_rec *r)
      *     For us, if r->filename represents an indirect lock (part of an infinity lock),
      *     we must actually perform an UNLOCK on the direct lock for this resource.
      */
-    if ((result = dav_unlock(r, resource, locktoken)) != OK) {
+    if ((result = dav_unlock(r, resource, lock_to_remove->locktoken)) != OK) {
         return result;
     }
+
+    /* if a locknull resource is shorn of all its locks, delete it */
+    if (resource_state == DAV_RESOURCE_LOCK_NULL &&
+        dav_get_resource_state(r, resource) == DAV_RESOURCE_NULL)
+        err = (*resource->hooks->remove_resource)(resource, NULL);
+
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
 
     return HTTP_NO_CONTENT;
 }
 
-static int dav_method_vsn_control(request_rec *r)
+static int dav_is_allow_method_unlock(dav_request *dav_r, 
+                                      const dav_hooks_acl *acl_hook, 
+                                      const dav_principal *principal)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err;
+
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err == NULL) 
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
+
+        /* We won't check for permission here because the lock owners can unlock
+           without the unlock privilege
+          if(resource->exists && acl_hook != NULL) 
+            retVal = (*acl_hook->is_allow)(principal, resource, DAV_PERMISSION_UNLOCK);
+        */
+    }
+    
+    return retVal;
+}
+
+static int dav_method_vsn_control(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     int resource_state;
     dav_auto_version_info av_info;
     const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
@@ -3235,18 +4464,22 @@ static int dav_method_vsn_control(request_rec *r)
     if (vsn_hooks == NULL)
         return DECLINED;
 
-    /* ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     /* remember the pre-creation resource state */
     resource_state = dav_get_resource_state(r, resource);
 
     /* parse the request body (may be a version-control element) */
-    if ((result = ap_xml_parse_input(r, &doc)) != OK) {
-        return result;
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if ((result = ap_xml_parse_input(r, &doc)) != OK)
+            return result;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
     }
     /* note: doc == NULL if no request body */
 
@@ -3277,7 +4510,7 @@ static int dav_method_vsn_control(request_rec *r)
         }
 
         /* get version URI */
-        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, NULL, NULL,
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
                         &target, &tsize);
         if (tsize == 0) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -3328,14 +4561,12 @@ static int dav_method_vsn_control(request_rec *r)
         }
     }
 
-    /* Check If-Headers and existing locks */
-    /* Note: depth == 0. Implies no need for a multistatus response. */
-    if ((err = dav_validate_request(r, resource, 0, NULL, NULL,
-                                    resource_state == DAV_RESOURCE_NULL ?
-                                    DAV_VALIDATE_PARENT :
-                                    DAV_VALIDATE_RESOURCE, NULL)) != NULL) {
-        return dav_handle_err(r, err, NULL);
-    }
+    dav_bind bind = { 0 };
+    bind.cur_resource = bind.new_resource = resource;
+    err = dav_validate_request
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
+       DAV_VALIDATE_IGNORE_TARGET_LOCKS, resource_state, NULL, NULL, NULL);
+    if (err) return dav_handle_err(r, err, NULL);
 
     /* if in versioned collection, make sure parent is checked out */
     if ((err = dav_auto_checkout(r, resource, 1 /* parent_only */,
@@ -3398,17 +4629,27 @@ static int dav_method_vsn_control(request_rec *r)
         }
     }
 
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
     /* set the Cache-Control header, per the spec */
     apr_table_setn(r->headers_out, "Cache-Control", "no-cache");
 
     /* return an appropriate response (HTTP_CREATED) */
+    #if 0
     return dav_created(r, resource->uri, "Version selector", 0 /*replaced*/);
+    #endif
+
+    return HTTP_OK;
 }
 
 /* handle the CHECKOUT method */
-static int dav_method_checkout(request_rec *r)
+static int dav_method_checkout(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     dav_resource *working_resource;
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     dav_error *err;
@@ -3424,8 +4665,11 @@ static int dav_method_checkout(request_rec *r)
     if (vsn_hooks == NULL)
         return DECLINED;
 
-    if ((result = ap_xml_parse_input(r, &doc)) != OK)
-        return result;
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if ((result = ap_xml_parse_input(r, &doc)) != OK)
+            return result;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
+    }
 
     if (doc != NULL) {
         const apr_xml_elem *aset;
@@ -3489,10 +4733,12 @@ static int dav_method_checkout(request_rec *r)
         }
     }
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 1 /*label_allowed*/, apply_to_vsn, &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 1 /*label_allowed*/, apply_to_vsn, &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
@@ -3545,13 +4791,15 @@ static int dav_method_checkout(request_rec *r)
         return DONE;
     }
 
-    return dav_created(r, working_resource->uri, "Checked-out resource", 0);
+    /* return dav_created(r, working_resource->uri, "Checked-out resource", 0);*/
+    return HTTP_OK;
 }
 
 /* handle the UNCHECKOUT method */
-static int dav_method_uncheckout(request_rec *r)
+static int dav_method_uncheckout(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     dav_error *err;
     int result;
@@ -3564,11 +4812,13 @@ static int dav_method_uncheckout(request_rec *r)
         return result;
     }
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
@@ -3605,6 +4855,11 @@ static int dav_method_uncheckout(request_rec *r)
         return dav_handle_err(r, err, NULL);
     }
 
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
     /* no body */
     ap_set_content_length(r, 0);
 
@@ -3612,9 +4867,10 @@ static int dav_method_uncheckout(request_rec *r)
 }
 
 /* handle the CHECKIN method */
-static int dav_method_checkin(request_rec *r)
+static int dav_method_checkin(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     dav_resource *new_version;
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     dav_error *err;
@@ -3626,8 +4882,11 @@ static int dav_method_checkin(request_rec *r)
     if (vsn_hooks == NULL)
         return DECLINED;
 
-    if ((result = ap_xml_parse_input(r, &doc)) != OK)
-        return result;
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if ((result = ap_xml_parse_input(r, &doc)) != OK)
+            return result;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
+    }
 
     if (doc != NULL) {
         if (!dav_validate_root(doc, "checkin")) {
@@ -3641,11 +4900,13 @@ static int dav_method_checkin(request_rec *r)
         keep_checked_out = dav_find_child(doc->root, "keep-checked-out") != NULL;
     }
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
@@ -3683,12 +4944,19 @@ static int dav_method_checkin(request_rec *r)
         return dav_handle_err(r, err, NULL);
     }
 
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
     return dav_created(r, new_version->uri, "Version", 0);
 }
 
-static int dav_method_update(request_rec *r)
+static int dav_method_update(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    /* ### permissions for UPDATE method have not defined in specification */
+    dav_resource *resource = dav_r->resource;
     dav_resource *version = NULL;
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     apr_xml_doc *doc;
@@ -3700,7 +4968,6 @@ static int dav_method_update(request_rec *r)
     const char *target;
     dav_response *multi_response;
     dav_error *err;
-    dav_lookup_result lookup;
 
     /* If no versioning provider, or UPDATE not supported,
      * decline the request */
@@ -3753,7 +5020,7 @@ static int dav_method_update(request_rec *r)
     }
 
     /* get the target value (a label or a version URI) */
-    apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, NULL, NULL,
+    apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
                     &target, &tsize);
     if (tsize == 0) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -3762,11 +5029,13 @@ static int dav_method_update(request_rec *r)
         return HTTP_BAD_REQUEST;
     }
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
         return dav_handle_err(r, err, NULL);
+    }
 
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
@@ -3785,29 +5054,8 @@ static int dav_method_update(request_rec *r)
     /* if target is a version, resolve the version resource */
     /* ### dav_lookup_uri only allows absolute URIs; is that OK? */
     if (!is_label) {
-        lookup = dav_lookup_uri(target, r, 0 /* must_be_absolute */);
-        if (lookup.rnew == NULL) {
-            if (lookup.err.status == HTTP_BAD_REQUEST) {
-                /* This supplies additional information for the default message. */
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "%s", lookup.err.desc);
-                return HTTP_BAD_REQUEST;
-            }
-
-            /* ### this assumes that dav_lookup_uri() only generates a status
-             * ### that Apache can provide a status line for!! */
-
-            return dav_error_response(r, lookup.err.status, lookup.err.desc);
-        }
-        if (lookup.rnew->status != HTTP_OK) {
-            /* ### how best to report this... */
-            return dav_error_response(r, lookup.rnew->status,
-                                      "Version URI had an error.");
-        }
-
         /* resolve version resource */
-        err = dav_get_resource(lookup.rnew, 0 /* label_allowed */,
-                               0 /* use_checked_in */, &version);
+        err = dav_get_resource_from_uri(target, r, 0 , NULL, &version);
         if (err != NULL)
             return dav_handle_err(r, err, NULL);
 
@@ -3826,6 +5074,11 @@ static int dav_method_update(request_rec *r)
                              err);
         return dav_handle_err(r, err, multi_response);
     }
+
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
 
     /* set the Cache-Control header, per the spec */
     apr_table_setn(r->headers_out, "Cache-Control", "no-cache");
@@ -3895,9 +5148,10 @@ static dav_error * dav_label_walker(dav_walk_resource *wres, int calltype)
     return NULL;
 }
 
-static int dav_method_label(request_rec *r)
+static int dav_method_label(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     apr_xml_doc *doc;
     apr_xml_elem *child;
@@ -3913,11 +5167,14 @@ static int dav_method_label(request_rec *r)
     if (vsn_hooks == NULL || vsn_hooks->add_label == NULL)
         return DECLINED;
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 1 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 1 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
+
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
         return HTTP_NOT_FOUND;
@@ -3967,7 +5224,7 @@ static int dav_method_label(request_rec *r)
         return HTTP_BAD_REQUEST;
     }
 
-    apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, NULL, NULL,
+    apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
                     &ctx.label, &tsize);
     if (tsize == 0) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -4020,9 +5277,10 @@ static int dav_method_label(request_rec *r)
     return DONE;
 }
 
-static int dav_method_report(request_rec *r)
+static int dav_method_report(dav_request *dav_r)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     int result;
     int label_allowed;
@@ -4042,15 +5300,17 @@ static int dav_method_report(request_rec *r)
         return HTTP_BAD_REQUEST;
     }
 
-    /* Ask repository module to resolve the resource.
-     * First determine whether a Target-Selector header is allowed
-     * for this report.
-     */
-    label_allowed = (*vsn_hooks->report_label_header_allowed)(doc);
-    err = dav_get_resource(r, label_allowed, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource.
+         * First determine whether a Target-Selector header is allowed
+         * for this report.
+         */
+        label_allowed = (*vsn_hooks->report_label_header_allowed)(doc);
+        err = dav_get_resource(r, label_allowed, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
         return dav_handle_err(r, err, NULL);
+    }
 
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
@@ -4085,9 +5345,19 @@ static int dav_method_report(request_rec *r)
     return DONE;
 }
 
-static int dav_method_make_workspace(request_rec *r)
+static int dav_is_allow_method_report(dav_request *dav_r, const dav_hooks_acl *acl_hook, const dav_principal *principal)
 {
-    dav_resource *resource;
+    request_rec *r;
+    r = dav_r->request;
+    /* ### fix it later */
+    int retVal = TRUE;
+    return retVal;
+}
+
+static int dav_method_make_workspace(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     dav_error *err;
     apr_xml_doc *doc;
@@ -4099,11 +5369,13 @@ static int dav_method_make_workspace(request_rec *r)
     if (vsn_hooks == NULL || vsn_hooks->make_workspace == NULL)
         return DECLINED;
 
-    /* ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     /* parse the request body (must be a mkworkspace element) */
     if ((result = ap_xml_parse_input(r, &doc)) != OK) {
@@ -4143,6 +5415,11 @@ static int dav_method_make_workspace(request_rec *r)
         return dav_handle_err(r, err, NULL);
     }
 
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
     /* set the Cache-Control header, per the spec */
     apr_table_setn(r->headers_out, "Cache-Control", "no-cache");
 
@@ -4150,9 +5427,46 @@ static int dav_method_make_workspace(request_rec *r)
     return dav_created(r, resource->uri, "Workspace", 0 /*replaced*/);
 }
 
-static int dav_method_make_activity(request_rec *r)
+static int dav_is_allow_method_make_workspace(dav_request *dav_r, 
+                                              const dav_hooks_acl *acl_hook, 
+                                              const dav_principal *principal)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err = NULL;
+    
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err != NULL)
+        return retVal;
+			   
+    /* Set the resolved resource in context, so that it can be reused */
+    dav_r->resource = resource;
+
+    if (acl_hook != NULL) {
+	const dav_hooks_repository *repos_hooks = resource->hooks;
+	dav_resource *parent_resource = NULL;
+	
+        err = (*repos_hooks->get_parent_resource)(resource, &parent_resource);
+	
+        if (err == NULL && parent_resource && parent_resource->exists) {
+	    retVal = (*acl_hook->is_allow)(principal, parent_resource, 
+                                           DAV_PERMISSION_WRITE_CONTENT);
+
+            /* percolate the need-privileges error tag */
+            if(!retVal) resource->err = parent_resource->err; 
+	}    
+    }
+
+    return retVal;
+}
+
+static int dav_method_make_activity(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     dav_error *err;
     int result;
@@ -4163,11 +5477,13 @@ static int dav_method_make_activity(request_rec *r)
     if (vsn_hooks == NULL || vsn_hooks->make_activity == NULL)
         return DECLINED;
 
-    /* ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
 
     /* MKACTIVITY does not have a defined request body. */
     if ((result = ap_discard_request_body(r)) != OK) {
@@ -4215,15 +5531,46 @@ static int dav_method_make_activity(request_rec *r)
     return dav_created(r, resource->uri, "Activity", 0 /*replaced*/);
 }
 
-static int dav_method_baseline_control(request_rec *r)
+static int dav_method_baseline_control(dav_request *dav_r)
 {
+    request_rec *r;
+    r = dav_r->request;
     /* ### */
     return HTTP_METHOD_NOT_ALLOWED;
 }
 
-static int dav_method_merge(request_rec *r)
+static int dav_is_allow_method_baseline_control(dav_request *dav_r, 
+                                                const dav_hooks_acl *acl_hook, 
+                                                const dav_principal *principal)
 {
-    dav_resource *resource;
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err;
+
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err == NULL) 
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
+
+        if( resource->exists && acl_hook != NULL) { 
+            retVal = (*acl_hook->is_allow)(principal, resource, 
+                                           DAV_PERMISSION_WRITE_CONTENT);
+            retVal = retVal && (*acl_hook->is_allow)(principal, resource, 
+                                                     DAV_PERMISSION_WRITE_PROPERTIES);
+        }
+    }
+    
+    return retVal;
+}
+
+static int dav_method_merge(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
     dav_resource *source_resource;
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     dav_error *err;
@@ -4235,7 +5582,6 @@ static int dav_method_merge(request_rec *r)
     const char *source;
     int no_auto_merge;
     int no_checkout;
-    dav_lookup_result lookup;
 
     /* If no versioning provider, decline the request */
     if (vsn_hooks == NULL)
@@ -4267,30 +5613,8 @@ static int dav_method_merge(request_rec *r)
         return HTTP_BAD_REQUEST;
     }
     source = dav_xml_get_cdata(href_elem, r->pool, 1 /* strip_white */);
-
-    /* get a subrequest for the source, so that we can get a dav_resource
-       for that source. */
-    lookup = dav_lookup_uri(source, r, 0 /* must_be_absolute */);
-    if (lookup.rnew == NULL) {
-        if (lookup.err.status == HTTP_BAD_REQUEST) {
-            /* This supplies additional information for the default message. */
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "%s", lookup.err.desc);
-            return HTTP_BAD_REQUEST;
-        }
-
-        /* ### this assumes that dav_lookup_uri() only generates a status
-         * ### that Apache can provide a status line for!! */
-
-        return dav_error_response(r, lookup.err.status, lookup.err.desc);
-    }
-    if (lookup.rnew->status != HTTP_OK) {
-        /* ### how best to report this... */
-        return dav_error_response(r, lookup.rnew->status,
-                                  "Merge source URI had an error.");
-    }
-    err = dav_get_resource(lookup.rnew, 0 /* label_allowed */,
-                           0 /* use_checked_in */, &source_resource);
+    
+    err = dav_get_resource_from_uri(source, r, 0 , NULL, &source_resource);
     if (err != NULL)
         return dav_handle_err(r, err, NULL);
 
@@ -4306,11 +5630,14 @@ static int dav_method_merge(request_rec *r)
        ### the code. maybe create a structure to hold CHECKOUT parameters
        ### which can be passed to the checkout() and merge() hooks. */
 
-    /* Ask repository module to resolve the resource */
-    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    if(resource == NULL) {
+        /* Ask repository module to resolve the resource */
+        err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                               &resource);
+        if (err != NULL)
+            return dav_handle_err(r, err, NULL);
+    }
+
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
         return HTTP_NOT_FOUND;
@@ -4350,23 +5677,666 @@ static int dav_method_merge(request_rec *r)
         return dav_handle_err(r, err, NULL);
     }
 
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
     /* the response was fully generated by the merge() hook. */
     /* ### urk. does this prevent logging? need to check... */
     return DONE;
 }
 
-static int dav_method_bind(request_rec *r)
+static int dav_is_allow_method_merge(dav_request *dav_r, 
+                                     const dav_hooks_acl *acl_hook, 
+                                     const dav_principal *principal)
 {
-    dav_resource *resource;
-    dav_resource *binding;
-    dav_auto_version_info av_info;
-    const dav_hooks_binding *binding_hooks = DAV_GET_HOOKS_BINDING(r);
-    const char *dest;
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
     dav_error *err;
-    dav_error *err2;
-    dav_response *multi_response = NULL;
+
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err == NULL) 
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
+
+        if(resource->exists && acl_hook != NULL) 
+            retVal = (*acl_hook->is_allow)(principal, resource,
+                                           DAV_PERMISSION_WRITE_CONTENT);
+    }
+    
+    return retVal;
+}
+
+DAV_DECLARE(dav_error *) dav_get_resource_from_uri(const char *uri, request_rec *r,
+                                                   int flags,
+                                                   request_rec **p_rec,
+                                                   dav_resource **p_resource)
+{
     dav_lookup_result lookup;
+    dav_error *err = NULL;
+    int must_be_absolute = flags & MUST_BE_ABSOLUTE;
+    int allow_cross_domain = flags & ALLOW_CROSS_DOMAIN;
+
+    lookup = dav_lookup_uri(uri, r, must_be_absolute, allow_cross_domain);
+    if (lookup.rnew == NULL) {
+        if (lookup.err.status == HTTP_BAD_GATEWAY)
+            return dav_new_error(r->pool, HTTP_FORBIDDEN, 0,
+                                 "Cross server operations are not "
+                                 "allowed by this server.");
+        return dav_new_error(r->pool, lookup.err.status, 0, lookup.err.desc);
+    }
+    if (lookup.rnew->status != HTTP_OK) {
+        const char *auth = apr_table_get(lookup.rnew->err_headers_out,
+                "WWW-Authenticate");
+        if (lookup.rnew->status == HTTP_UNAUTHORIZED && auth != NULL) {
+            /* propagate the WWW-Authorization header up from the
+             * subreq so the client sees it. */
+            apr_table_set(r->err_headers_out, "WWW-Authenticate",
+                    apr_pstrdup(r->pool, auth));
+        }
+        return dav_new_error
+          (r->pool, lookup.rnew->status, 0,
+           apr_psprintf(r->pool, "URI %s had an error.", uri));
+    }
+
+    if (p_rec) 
+        *p_rec = lookup.rnew;
+    if (p_resource)
+        err = dav_get_resource(lookup.rnew, 0 /* label_allowed */, 
+                               0 /* use_checked_in */, p_resource);
+    return err;
+}
+
+static int dav_is_allow_method_bind(dav_request *dav_r, 
+                                    const dav_hooks_acl *acl_hook,
+                                    const dav_principal *principal)
+{
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL, *binding;
+    dav_error *err;
+    const char *segment_str, *new_uri;
+    apr_xml_doc *doc;
+    apr_xml_elem *child;
+    request_rec *binding_rec;
+
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err == NULL) 
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
+
+        if(resource->exists && acl_hook != NULL) 
+            retVal = (*acl_hook->is_allow)(principal, resource,
+                                           DAV_PERMISSION_BIND);
+    }
+    if(!retVal) return retVal;
+
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if (ap_xml_parse_input(r, &doc) != OK)
+            return retVal;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
+    }
+
+    if(!doc) return retVal;
+
+    if ((child = dav_find_child(doc->root, "segment")) != NULL) {
+        apr_size_t ssize; /* segment string size */
+        /* Read Segment element */
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
+                        &segment_str, &ssize);
+        if (ssize == 0) return retVal;
+    } 
+    else return retVal;
+    
+    /* get the destination URI */
+    new_uri = apr_psprintf(r->pool, "%s/%s", r->unparsed_uri, segment_str);
+    err = dav_get_resource_from_uri(new_uri, r, 0 , 
+                                    &binding_rec, &binding);
+    if (err) return retVal;
+
+    /* check if destination bind exists */
+    if(binding->exists && acl_hook)
+        retVal = (*acl_hook->is_allow)(principal, resource, DAV_PERMISSION_UNBIND);
+
+    return retVal;
+}
+
+static int dav_is_allow_method_rebind(dav_request *dav_r,
+                                      const dav_hooks_acl *acl_hook,
+                                      const dav_principal *principal)
+{
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err;
+    apr_xml_doc *doc;
+    apr_xml_elem *child;
+    const char *target_href, *segment_str, *new_uri;
+    request_rec *old_binding_rec, *binding_rec;
+    dav_resource *binding, *old_binding, *parent_resource;
+
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err == NULL) 
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
+
+        if(resource->exists && acl_hook != NULL) 
+            retVal = (*acl_hook->is_allow)(principal, resource,
+                                           DAV_PERMISSION_BIND);
+    }
+
+    if(!retVal) return retVal;
+
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if (ap_xml_parse_input(r, &doc) != OK)
+            return retVal;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
+    }
+
+    if(!doc) return retVal;
+
+    if ((child = dav_find_child(doc->root, "segment")) != NULL) {
+        apr_size_t ssize; /* segment string size */
+        /* Read Segment element */
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
+                        &segment_str, &ssize);
+        if (ssize == 0) return retVal;
+    } 
+    else return retVal;
+    
+    /* get the destination URI */
+    new_uri = apr_psprintf(r->pool, "%s/%s", r->unparsed_uri, segment_str);
+    err = dav_get_resource_from_uri(new_uri, r, 0, 
+                                    &binding_rec, &binding);
+    if (err) return retVal;
+
+    /* check if destination bind exists */
+    if(binding->exists && acl_hook)
+        retVal = (*acl_hook->is_allow)(principal, resource, DAV_PERMISSION_UNBIND);
+    if(!retVal) return retVal;
+
+    if ((child = dav_find_child(doc->root, "href")) != NULL) {
+        /* Read Href element */
+        apr_size_t hsize;
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
+                        &target_href, &hsize);
+        if (hsize == 0) return retVal;
+    }
+    else return retVal;
+
+    err = dav_get_resource_from_uri(target_href, r, 0, 
+                                    &old_binding_rec, &old_binding);
+    if (err) return retVal;
+
+    err = (*old_binding->hooks->get_parent_resource)(old_binding, &parent_resource); 
+    if(err) return retVal;
+
+    if(parent_resource->exists && acl_hook != NULL) 
+        retVal = (*acl_hook->is_allow)(principal, parent_resource, 
+                                       DAV_PERMISSION_UNBIND);
+    
+    return retVal;
+}
+
+static int dav_is_allow_method_unbind(dav_request *dav_r,
+                                      const dav_hooks_acl *acl_hook,
+                                      const dav_principal *principal)
+{
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err;
+
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err == NULL) 
+    {
+        /* Set the resolved resource in context, so that it can be reused */
+        dav_r->resource = resource;
+
+        if(resource->exists && acl_hook != NULL) 
+            retVal = (*acl_hook->is_allow)(principal, resource,
+                                           DAV_PERMISSION_UNBIND);
+    }
+    
+    return retVal;
+}
+
+static int dav_method_rebind(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    request_rec *binding_rec, *old_binding_rec;
+    dav_resource *base_resource, *binding, *old_binding;
+    const dav_hooks_binding *binds_hooks = DAV_GET_HOOKS_BINDING(r);
+    const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
+    dav_lockdb *lockdb;
+    dav_auto_version_info src_av_info, dst_av_info;
+    apr_xml_doc *doc;
+    apr_xml_elem *child;
+    const char *segment_str, *new_uri, *target_href;
     int overwrite;
+    dav_response *multi_response = NULL;
+    dav_error *err, *err2, *err3;
+    int resource_state;
+
+    /* If no bindings provider, decline the request */
+    if (binds_hooks == NULL)
+        return DECLINED;
+
+    if ((err = (*locks_hooks->open_lockdb)(r, 0, 0, &lockdb)) != NULL) {
+        /* The resource creation was successful, but the locking failed. */
+        err = dav_push_error(r->pool, err->status, 0,
+                             "The BIND was successful, but there "
+                             "was a problem opening the lock database "
+                             "which prevents inheriting locks from the "
+                             "parent resources.",
+                             err);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* Ask repository module to resolve the resource */
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &base_resource);
+    if (err != NULL)
+        return dav_handle_err(r, err, NULL);
+
+    if (!base_resource->exists) {
+        /* Apache will supply a default error for this. */
+        return HTTP_NOT_FOUND;
+    }
+
+    if (!base_resource->collection)
+        return dav_error_response(r, HTTP_PRECONDITION_FAILED,
+                                  "DAV:rebind-into-collection");
+
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if (ap_xml_parse_input(r, &doc) != OK)
+            return HTTP_BAD_REQUEST;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
+    }
+
+    if (doc == NULL)
+        return HTTP_BAD_REQUEST;
+
+    if (dav_validate_root(doc, "rebind") != TRUE) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "The root element \"rebind\" was not found.");
+        return HTTP_BAD_REQUEST;
+    }
+
+    if ((child = dav_find_child(doc->root, "segment")) != NULL) {
+        apr_size_t ssize; /* segment string size */
+        /* Read Segment element */
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
+                        &segment_str, &ssize);
+        if (ssize == 0) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "\"segment\" does not contain a segment name");
+            return HTTP_BAD_REQUEST;
+        }
+    } else {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "The \"rebind\" element does not contain one of "
+                      "the required child element \"segment\"");
+        return HTTP_BAD_REQUEST;
+    }
+    
+    /* get the destination URI */
+    new_uri = apr_psprintf(r->pool, "%s/%s", r->unparsed_uri, segment_str);
+    err = dav_get_resource_from_uri(new_uri, r, 0, 
+                                    &binding_rec, &binding);
+    if (err) dav_handle_err(r, err, NULL);
+
+    /* are the two resources handled by the same repository? */
+    if (base_resource->hooks != binding->hooks) {
+        /* ### this message exposes some backend config, but screw it... */
+        return dav_error_response(r, HTTP_BAD_GATEWAY,
+                                  "Destination URI is handled by a "
+                                  "different repository than the source URI. "
+                                  "BIND between repositories is not possible.");
+    }
+
+    /* get and parse the overwrite header value */
+    if ((overwrite = dav_get_overwrite(r)) < 0) {
+        /* dav_get_overwrite() supplies additional information for the
+         * default message. */
+        return HTTP_BAD_REQUEST;
+    }
+
+    /* quick failure test: if dest exists and overwrite is false. */
+    if (binding->exists && !overwrite) {
+        return dav_error_response(r, HTTP_PRECONDITION_FAILED,
+                                  "DAV:can-overwrite");
+    } else /* Reuse overwrite variable to indicate OK or CREATED */
+        overwrite = binding->exists;
+
+    if ((child = dav_find_child(doc->root, "href")) != NULL) {
+        /* Read Href element */
+        apr_size_t hsize;
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
+                        &target_href, &hsize);
+        if (hsize == 0) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "The \"href\" element does not contain a URI.");
+            return HTTP_BAD_REQUEST;
+        }
+    } else {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "The \"rebind\" element does not contain "
+                      "the required child element \"href\"");
+        return HTTP_BAD_REQUEST;
+    }
+
+    err = dav_get_resource_from_uri(target_href, r, 0, 
+                                    &old_binding_rec, &old_binding);
+    if (err) return dav_handle_err(r, err, NULL);
+    if (!old_binding->exists)
+        return dav_error_response(old_binding_rec, HTTP_PRECONDITION_FAILED,
+                                  "DAV:rebind-source-exists");
+
+    /* are the two resources handled by the same repository? */
+    if (old_binding->hooks != base_resource->hooks) {
+        /* ### this message exposes some backend config, but screw it... */
+        return dav_error_response(r, HTTP_BAD_GATEWAY,
+                                  "Destination URI is handled by a "
+                                  "different repository than the source URI. "
+                                  "BIND between repositories is not possible.");
+    }
+
+    dav_lock *lrl_to_refresh=NULL, *lrl_to_delete=NULL, *lock_i=NULL;
+    dav_bind bind = { 0 }, unbind = { 0 };
+    bind.cur_resource = binding;
+    bind.collection = base_resource;
+    bind.bind_name = basename(bind.cur_resource->uri);
+    bind.new_resource = old_binding;
+    unbind.cur_resource = old_binding;
+    resource_state = dav_get_resource_state(r, base_resource);
+    err = dav_validate_request
+      (r, DAV_INFINITY, lockdb, &bind, old_binding->exists ? &unbind : NULL,
+       DAV_VALIDATE_BIND | (old_binding->exists ? DAV_VALIDATE_UNBIND : 0),
+       resource_state, &multi_response, &lrl_to_refresh, &lrl_to_delete);
+
+    if (err) return dav_handle_err(r, err, NULL);
+
+    if (lockdb != NULL) {
+        int ret;
+        ret = dav_unlock(r, old_binding, NULL);
+        if (ret != OK)
+            return ret;
+    }
+
+    /* prepare the source collection for modification */
+    if ((err = dav_auto_checkout(old_binding_rec, old_binding, 1,
+                                 &src_av_info)) != NULL) {
+        /* could not make source writable */
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* prepare the destination collection for modification */
+    if ((err = dav_auto_checkout(binding_rec, binding, 1 /* parent_only */,
+                                 &dst_av_info)) != NULL) {
+        /* undo the source collection checkout */
+        dav_auto_checkin(old_binding_rec, NULL, 1, 0, &src_av_info);
+        /* could not make destination writable */
+        return dav_handle_err(r, err, NULL);
+    }
+
+    if (!err)
+        err = (*binds_hooks->rebind_resource)(base_resource, segment_str, 
+                                              old_binding, binding);
+
+    /* restore parent collection states */
+    err2 = dav_auto_checkin(old_binding_rec, NULL, 
+                            err != NULL, 0, &src_av_info);
+
+    err3 = dav_auto_checkin(binding_rec, NULL,
+                            err != NULL /* undo if error */,
+                            0 /* unlock */, &dst_av_info);
+
+    /* check for error from remove/rebind operations */
+    if (err != NULL) {
+        err = dav_push_error(r->pool, err->status, 0,
+                             apr_psprintf(r->pool,
+                                          "Could not BIND %s.",
+                                          ap_escape_html(r->pool, r->uri)),
+                             err);
+        return dav_handle_err(r, err, multi_response);
+    }
+
+    /* check for errors from reverting writability */
+    if (err2 != NULL || err3 != NULL) {
+        /* just log a warning */
+        err = dav_push_error(r->pool, err2->status, 0,
+                             "The BIND was successful, but there was a "
+                             "problem automatically checking in the "
+                             "source parent collection.",
+                             err2);
+        dav_log_err(r, err, APLOG_WARNING);
+    }
+
+    /* if the resource is lockable, let lock system know of new resource */
+    if (lockdb != NULL) {
+        for (lock_i = lrl_to_delete; lock_i && !err; lock_i = lock_i->next)
+            err = (*lockdb->hooks->remove_lock)(lockdb, NULL, lock_i->locktoken);
+        for (lock_i = lrl_to_refresh; lock_i && !err; lock_i = lock_i->next)
+            err = (*lockdb->hooks->remove_lock)(lockdb, NULL, lock_i->locktoken);
+
+        if (!err && lrl_to_refresh)
+            err = (*lockdb->hooks->refresh_locks)(lockdb, binding, lrl_to_refresh, 1);
+
+        if (err) return dav_handle_err(r, err, NULL);
+
+        /* notify lock system that we have created/replaced a resource */
+        err = dav_notify_created(r, lockdb, binding, DAV_RESOURCE_NULL , 0);
+
+        (*locks_hooks->close_lockdb)(lockdb);
+
+        if (err != NULL) {
+            /* The dir creation was successful, but the locking failed. */
+            err = dav_push_error(r->pool, err->status, 0,
+                                 "The BIND was successful, but there "
+                                 "was a problem updating its lock "
+                                 "information.",
+                                 err);
+            return dav_handle_err(r, err, NULL);
+        }
+    }
+ 
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
+    if (overwrite) {
+        r->status = HTTP_OK;
+        return DONE;
+    }
+    return dav_created(r, binding_rec->uri, "Binding", 0);
+}
+
+static int dav_method_unbind(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request, *resource_rec;
+    dav_resource *base_resource, *resource;
+    const dav_hooks_binding *bind_hooks = DAV_GET_HOOKS_BINDING(r);
+    dav_lockdb *lockdb = NULL;
+    dav_auto_version_info av_info = { 0 };
+    apr_xml_doc *doc;
+    apr_xml_elem *child;
+    const char *segment = NULL, *segment_uri = NULL;
+    dav_error *err, *err2;
+    dav_response *multi_response = NULL;
+    int result;
+    int resource_state;
+
+    /* If no bindings provider, decline the request */
+    if (bind_hooks == NULL)
+        return DECLINED;
+
+    if ((err = dav_open_lockdb(r, 0, &lockdb)) != NULL) {
+        /* ### add a higher-level description? */
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* Ask repository module to resolve the resource */
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &base_resource);
+    if (err != NULL)
+        return dav_handle_err(r, err, NULL);
+
+    if (!base_resource->exists) {
+        /* Apache will supply a default error for this. */
+        return HTTP_NOT_FOUND;
+    }
+
+    if (!base_resource->collection)
+        return dav_error_response(r, HTTP_PRECONDITION_FAILED,
+                                  "(DAV:unbind-from-collection)");
+
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if (ap_xml_parse_input(r, &doc) != OK)
+            return HTTP_BAD_REQUEST;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
+    }
+
+    if (doc == NULL)
+        return HTTP_BAD_REQUEST;
+
+    if (dav_validate_root(doc, "unbind") != TRUE) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "The root element \"unbind\" was not found.");
+        return HTTP_BAD_REQUEST;
+    }
+
+    if ((child = dav_find_child(doc->root, "segment")) != NULL) {
+        apr_size_t ssize; /* segment string size */
+        /* Read Segment element */
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
+                        &segment, &ssize);
+        if (ssize == 0) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "\"segment\" does not contain a segment name");
+            return HTTP_BAD_REQUEST;
+        }
+    } else {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "The \"unbind\" element does not contain one of "
+                      "the required child element \"segment\"");
+        return HTTP_BAD_REQUEST;
+    }
+    
+    /* get the complete URI of the resource being unbound */
+    segment_uri = apr_psprintf(r->pool, "%s/%s?no_rewrite", base_resource->uri,
+                               segment);
+    err = dav_get_resource_from_uri(segment_uri, r, 0, 
+                                    &resource_rec, &resource);
+    if (err) return dav_handle_err(r, err, NULL);
+
+    if (!resource->exists)
+        return dav_error_response(r, HTTP_PRECONDITION_FAILED,
+                                  "(DAV:unbind-source-exists)");
+
+    /* are the two resources handled by the same repository? */
+    if (base_resource->hooks != resource->hooks) {
+        /* ### this message exposes some backend config, but screw it... */
+        return dav_error_response(r, HTTP_BAD_GATEWAY,
+                                  "Destination URI is handled by a "
+                                  "different repository than the source URI. "
+                                  "BIND between repositories is not possible.");
+    }
+
+    dav_lock *lrl_to_delete = NULL, *li = NULL;
+    dav_bind unbind = { 0 };
+    unbind.collection = base_resource;
+    unbind.bind_name = segment;
+    unbind.cur_resource = resource;
+    resource_state = dav_get_resource_state(r, resource);
+    err = dav_validate_request
+      (r, DAV_INFINITY, lockdb, NULL, &unbind, DAV_VALIDATE_UNBIND, resource_state,
+       &multi_response, NULL, &lrl_to_delete);
+    if (err) return dav_handle_err(r, err, multi_response);
+
+    if ((result = dav_unlock(r, resource, NULL)) != OK) {
+        return result;
+    }
+
+    /* prepare the parent collection for modification */
+    if ((err = dav_auto_checkout(resource_rec, resource, 1 /* parent_only */,
+                                 &av_info)) != NULL) {
+        /* could not make destination writable */
+        return dav_handle_err(r, err, NULL);
+    }
+
+    err = (*bind_hooks->unbind_resource)(resource, base_resource, segment);
+
+    if (!err) 
+        for (li = lrl_to_delete; li && !err; li = li->next)
+            err = (*lockdb->hooks->remove_lock)(lockdb, NULL, li->locktoken);
+
+    if (lockdb != NULL)
+        (*lockdb->hooks->close_lockdb)(lockdb);
+        
+    /* restore parent collection states */
+    err2 = dav_auto_checkin(r, NULL,
+                            err != NULL /* undo if error */,
+                            0 /* unlock */, &av_info);
+
+    /* check for error from remove/bind operations */
+    if (err != NULL) {
+        err = dav_push_error(r->pool, err->status, 0,
+                             apr_psprintf(r->pool,
+                                          "Could not BIND %s.",
+                                          ap_escape_html(r->pool, r->uri)),
+                             err);
+        return dav_handle_err(r, err, multi_response);
+    }
+
+    /* check for errors from reverting writability */
+    if (err2 != NULL) {
+        /* just log a warning */
+        err = dav_push_error(r->pool, err2->status, 0,
+                             "The BIND was successful, but there was a "
+                             "problem automatically checking in the "
+                             "source parent collection.",
+                             err2);
+        dav_log_err(r, err, APLOG_WARNING);
+    }
+
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
+    return HTTP_OK;
+}
+
+static int dav_method_bind(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    dav_resource *binding_parent, *resource, *binding;
+    request_rec *binding_rec;
+    const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
+    const dav_hooks_binding *binding_hooks = DAV_GET_HOOKS_BINDING(r);
+    int overwrite;
+    dav_auto_version_info av_info = { 0 };
+    apr_xml_doc *doc;
+    apr_xml_elem *child;
+    const char *segment_str, *dest, *target_href;
+    dav_response *multi_response = NULL;
+    dav_error *err, *err2;
+    int resource_state;
 
     /* If no bindings provider, decline the request */
     if (binding_hooks == NULL)
@@ -4374,62 +6344,62 @@ static int dav_method_bind(request_rec *r)
 
     /* Ask repository module to resolve the resource */
     err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
-                           &resource);
+                           &binding_parent);
     if (err != NULL)
         return dav_handle_err(r, err, NULL);
 
-    if (!resource->exists) {
+    if (!binding_parent->exists) {
         /* Apache will supply a default error for this. */
         return HTTP_NOT_FOUND;
     }
 
-    /* get the destination URI */
-    dest = apr_table_get(r->headers_in, "Destination");
-    if (dest == NULL) {
-        /* This supplies additional information for the default message. */
+    if (!binding_parent->collection) {
+        err = dav_new_error_tag
+          (r->pool, HTTP_CONFLICT, 0, "Request-URI not a collection",
+           NULL, "binding-into-collection", NULL);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
+        if (ap_xml_parse_input(r, &doc) != OK)
+            return HTTP_BAD_REQUEST;
+        apr_table_setn(r->notes, "parsed_xml_body", (char *)doc);
+    }
+
+    if (doc == NULL)
+        return HTTP_BAD_REQUEST;
+
+    if (dav_validate_root(doc, "bind") != TRUE) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "The request is missing a Destination header.");
+                      "The root element \"bind\" was not found.");
         return HTTP_BAD_REQUEST;
     }
 
-    lookup = dav_lookup_uri(dest, r, 0 /* must_be_absolute */);
-    if (lookup.rnew == NULL) {
-        if (lookup.err.status == HTTP_BAD_REQUEST) {
-            /* This supplies additional information for the default message. */
+    if ((child = dav_find_child(doc->root, "segment")) != NULL) {
+        apr_size_t ssize; /* segment string size */
+        /* Read Segment element */
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
+                        &segment_str, &ssize);
+        if (ssize == 0) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "%s", lookup.err.desc);
+                          "\"segment\" does not contain a segment name");
             return HTTP_BAD_REQUEST;
         }
-        else if (lookup.err.status == HTTP_BAD_GATEWAY) {
-            /* ### Bindings protocol draft 02 says to return 507
-             * ### (Cross Server Binding Forbidden); Apache already defines 507
-             * ### as HTTP_INSUFFICIENT_STORAGE. So, for now, we'll return
-             * ### HTTP_FORBIDDEN
-             */
-             return dav_error_response(r, HTTP_FORBIDDEN,
-                                       "Cross server bindings are not "
-                                       "allowed by this server.");
-        }
-
-        /* ### this assumes that dav_lookup_uri() only generates a status
-         * ### that Apache can provide a status line for!! */
-
-        return dav_error_response(r, lookup.err.status, lookup.err.desc);
+    } else {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "The \"bind\" element does not contain one of "
+                      "the required child element \"segment\"");
+        return HTTP_BAD_REQUEST;
     }
-    if (lookup.rnew->status != HTTP_OK) {
-        /* ### how best to report this... */
-        return dav_error_response(r, lookup.rnew->status,
-                                  "Destination URI had an error.");
-    }
-
-    /* resolve binding resource */
-    err = dav_get_resource(lookup.rnew, 0 /* label_allowed */,
-                           0 /* use_checked_in */, &binding);
-    if (err != NULL)
-        return dav_handle_err(r, err, NULL);
+    
+    /* get the destination URI */
+    dest = apr_psprintf(r->pool, "%s/%s", r->unparsed_uri, segment_str);
+    err = dav_get_resource_from_uri(dest, r, 0, 
+                                    &binding_rec, &binding);
+    if (err) dav_handle_err(r, err, NULL);
 
     /* are the two resources handled by the same repository? */
-    if (resource->hooks != binding->hooks) {
+    if (binding_parent->hooks != binding->hooks) {
         /* ### this message exposes some backend config, but screw it... */
         return dav_error_response(r, HTTP_BAD_GATEWAY,
                                   "Destination URI is handled by a "
@@ -4449,56 +6419,53 @@ static int dav_method_bind(request_rec *r)
         return dav_error_response(r, HTTP_PRECONDITION_FAILED,
                                   "Destination is not empty and "
                                   "Overwrite is not \"T\"");
+    } else /* Reusing overwrite variable to indicate OK or CREATED */
+        overwrite = binding->exists; 
+
+    if ((child = dav_find_child(doc->root, "href")) != NULL) {
+        /* Read Href element */
+        apr_size_t hsize;
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
+                        &target_href, &hsize);
+        if (hsize == 0) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "The \"href\" element does not contain a URI.");
+            return HTTP_BAD_REQUEST;
+        }
+    } else {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "The \"bind\" element does not contain "
+                      "the required child element \"href\"");
+        return HTTP_BAD_REQUEST;
     }
 
-    /* are the source and destination the same? */
-    if ((*resource->hooks->is_same_resource)(resource, binding)) {
-        return dav_error_response(r, HTTP_FORBIDDEN,
-                                  "Source and Destination URIs are the same.");
+    if ((err = dav_get_resource_from_uri(target_href, r, 0, NULL, &resource)))
+        return dav_handle_err(r, err, NULL);
+
+    if (!resource->exists) {
+        err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0, "href doesn't exist",
+                                NULL, "bind-source-exists", NULL);
+        return dav_handle_err(r, err, NULL);
     }
 
-    /*
-     * Check If-Headers and existing locks for destination. Note that we
-     * use depth==infinity since the target (hierarchy) will be deleted
-     * before the move/copy is completed.
-     *
-     * Note that we are overwriting the target, which implies a DELETE, so
-     * we are subject to the error/response rules as a DELETE. Namely, we
-     * will return a 424 error if any of the validations fail.
-     * (see dav_method_delete() for more information)
-     */
-    if ((err = dav_validate_request(lookup.rnew, binding, DAV_INFINITY, NULL,
-                                    &multi_response,
-                                    DAV_VALIDATE_PARENT
-                                    | DAV_VALIDATE_USE_424, NULL)) != NULL) {
-        err = dav_push_error(r->pool, err->status, 0,
-                             apr_psprintf(r->pool,
-                                          "Could not BIND %s due to a "
-                                          "failed precondition on the "
-                                          "destination (e.g. locks).",
-                                          ap_escape_html(r->pool, r->uri)),
-                             err);
-        return dav_handle_err(r, err, multi_response);
+    /* are the two resources handled by the same repository? */
+    if (resource->hooks != binding_parent->hooks) {
+        /* ### this message exposes some backend config, but screw it... */
+        return dav_error_response(r, HTTP_BAD_GATEWAY,
+                                  "Destination URI is handled by a "
+                                  "different repository than the source URI. "
+                                  "BIND between repositories is not possible.");
     }
 
-    /* guard against creating circular bindings */
-    if (resource->collection
-        && (*resource->hooks->is_parent_resource)(resource, binding)) {
-        return dav_error_response(r, HTTP_FORBIDDEN,
-                                  "Source collection contains the Destination.");
-    }
-    if (resource->collection
-        && (*resource->hooks->is_parent_resource)(binding, resource)) {
-        /* The destination must exist (since it contains the source), and
-         * a condition above implies Overwrite==T. Obviously, we cannot
-         * delete the Destination before the BIND, as that would
-         * delete the Source.
-         */
-
-        return dav_error_response(r, HTTP_FORBIDDEN,
-                                  "Destination collection contains the Source and "
-                                  "Overwrite has been specified.");
-    }
+    dav_lock *lrl_to_refresh=NULL, *lrl_to_delete=NULL;
+    dav_bind bind = { 0 };
+    bind.cur_resource = binding;
+    bind.new_resource = resource;
+    resource_state = dav_get_resource_state(r, resource);
+    err = dav_validate_request
+      (r, DAV_INFINITY, NULL, &bind, NULL, DAV_VALIDATE_BIND, resource_state,
+       &multi_response, &lrl_to_refresh, &lrl_to_delete);
+    if (err) return dav_handle_err(r, err, multi_response);
 
     /* prepare the destination collection for modification */
     if ((err = dav_auto_checkout(r, binding, 1 /* parent_only */,
@@ -4514,7 +6481,8 @@ static int dav_method_bind(request_rec *r)
         err = (*resource->hooks->remove_resource)(binding, &multi_response);
 
     if (err == NULL) {
-        err = (*binding_hooks->bind_resource)(resource, binding);
+        err = (*binding_hooks->bind_resource)
+          (resource, binding_parent, segment_str, binding);
     }
 
     /* restore parent collection states */
@@ -4543,17 +6511,603 @@ static int dav_method_bind(request_rec *r)
         dav_log_err(r, err, APLOG_WARNING);
     }
 
-    /* return an appropriate response (HTTP_CREATED) */
-    /* ### spec doesn't say what happens when destination was replaced */
-    return dav_created(r, lookup.rnew->uri, "Binding", 0);
+    /* if the resource is lockable, let lock system know of new resource */
+    if (locks_hooks != NULL) {
+        dav_lockdb *lockdb;
+        dav_lock *li;
+
+        if ((err = (*locks_hooks->open_lockdb)(r, 0, 0, &lockdb)) != NULL) {
+            /* The resource creation was successful, but the locking failed. */
+            err = dav_push_error(r->pool, err->status, 0,
+                                 "The BIND was successful, but there "
+                                 "was a problem opening the lock database "
+                                 "which prevents inheriting locks from the "
+                                 "parent resources.",
+                                 err);
+            return dav_handle_err(r, err, NULL);
+        }
+
+        for (li = lrl_to_delete; li && !err; li = li->next)
+            err = (*lockdb->hooks->remove_lock)(lockdb, NULL, li->locktoken);
+        for (li = lrl_to_refresh; li && !err; li = li->next)
+            err = (*lockdb->hooks->remove_lock)(lockdb, NULL, li->locktoken);
+
+        if (!err && lrl_to_refresh)
+            err = (*lockdb->hooks->refresh_locks)(lockdb, resource,
+                                                  lrl_to_refresh, 1);
+
+        /* notify lock system that we have created/replaced a resource */
+        if (!err)
+            err = dav_notify_created(r, lockdb, binding, DAV_RESOURCE_NULL , 0);
+
+        (*locks_hooks->close_lockdb)(lockdb);
+
+        if (err != NULL) {
+            /* The dir creation was successful, but the locking failed. */
+            err = dav_push_error(r->pool, err->status, 0,
+                                 "The BIND was successful, but there "
+                                 "was a problem updating its lock "
+                                 "information.",
+                                 err);
+            return dav_handle_err(r, err, NULL);
+        }
+    }
+ 
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
+    /* return an appropriate response (HTTP_OK or HTTP_CREATED) */
+    if (overwrite) {
+        r->status = HTTP_OK;
+        return DONE;
+    }
+    return dav_created(r, binding_rec->uri, "Binding", 0);
 }
 
+int dav_method_handle(dav_method *m, dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    int retVal;
+    dav_error *err = NULL;
+
+    if (m) {
+        int xaction_error = 0;
+
+        /* start a transaction if the method is transactional */
+        if(m->is_transactional) 
+            dav_transaction_start(r, &(dav_r->trans));
+        
+        retVal = (*m->handle)(dav_r);
+        
+        /* end the transaction if started */
+        if(dav_r->trans) {
+            err = dav_transaction_end(r, dav_r->trans);
+            if (apr_table_get(r->notes, "xaction_error")) {
+                xaction_error = 1;
+                apr_table_setn(r->notes, "xaction_error", NULL);
+            }
+        }
+
+        /* send transaction 5xx errors only if 
+         * we were going to send 2xx otherwise. */
+        if(!xaction_error && err && ap_is_HTTP_SUCCESS(retVal)) {
+            retVal = dav_handle_err(r, err, NULL);
+        }
+
+        return xaction_error ? HTTP_SERVICE_UNAVAILABLE : retVal;
+    }
+
+    return DECLINED;
+}
+
+int dav_is_method_allow(dav_method *m, dav_request *dav_r,
+                        const dav_hooks_acl *acl_hook,
+                        const dav_principal *principal)
+{
+    if (m)
+	return (*m->is_allow)(dav_r, acl_hook, principal);
+    return FALSE;
+}
 
 /*
  * Response handler for DAV resources
  */
+
+dav_method *make_get_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_get;
+    retVal->is_allow = dav_is_allow_method_get;
+
+    return retVal;
+}
+
+static dav_method *make_put_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_put;
+    retVal->is_allow = dav_is_allow_method_put;
+   
+    retVal->is_transactional = 1;
+
+    return retVal;
+}
+
+static dav_method *make_post_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_post;
+    retVal->is_allow = dav_is_allow_method_get;
+    
+    return retVal;
+}
+
+static dav_method *make_delete_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_delete;
+    retVal->is_allow = dav_is_allow_method_delete;
+   
+    retVal->is_transactional = 1;
+
+    return retVal;
+}
+
+static dav_method *make_options_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_options;
+    retVal->is_allow = dav_is_allow_method_get;
+    
+    return retVal;
+}
+
+static dav_method *make_propfind_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_propfind;
+    retVal->is_allow = dav_is_allow_method_propfind;
+    
+    return retVal;
+}
+
+static dav_method *make_proppatch_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_proppatch;
+    retVal->is_allow = dav_is_allow_method_proppatch;
+    
+    retVal->is_transactional = 1;
+
+    return retVal;
+}
+
+static dav_method *make_mkcol_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_mkcol;
+    retVal->is_allow = dav_is_allow_method_mkcol;
+    
+    retVal->is_transactional = 1;
+
+    return retVal;
+}
+
+static dav_method *make_copy_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_copymove;
+    retVal->is_allow = dav_is_allow_method_copy;
+    retVal->is_transactional = 1;
+
+    return retVal;
+}
+
+static dav_method *make_move_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_copymove;
+    retVal->is_allow = dav_is_allow_method_move;
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_lock_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_lock;
+    retVal->is_allow = dav_is_allow_method_lock;
+    
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_unlock_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_unlock;
+    retVal->is_allow = dav_is_allow_method_unlock;
+    
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_vsn_control_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_vsn_control;
+    retVal->is_allow = dav_is_allow_method_proppatch;
+    
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_checkout_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_checkout;
+    retVal->is_allow = dav_is_allow_method_proppatch;
+    
+    return retVal;
+}
+
+static dav_method *make_uncheckout_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_uncheckout;
+    retVal->is_allow = dav_is_allow_method_proppatch;
+    
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_checkin_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_checkin;
+    retVal->is_allow = dav_is_allow_method_proppatch;
+    
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_update_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_update;
+    retVal->is_allow = NULL; /* TODO */
+    
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_label_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_label;
+    retVal->is_allow = NULL; /* TODO */
+    
+    return retVal;
+}
+
+static dav_method *make_report_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_report;
+    retVal->is_allow = dav_is_allow_method_report;
+    
+    return retVal;
+}
+
+static dav_method *make_make_workspace_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_make_workspace;
+    retVal->is_allow = dav_is_allow_method_make_workspace;
+    
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_make_activity_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_make_activity;
+    retVal->is_allow = dav_is_allow_method_make_workspace;
+    return retVal;
+}
+
+static dav_method *make_baseline_control_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_baseline_control;
+    retVal->is_allow = dav_is_allow_method_baseline_control;
+    
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_merge_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_merge;
+    retVal->is_allow = dav_is_allow_method_merge;
+    
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_bind_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    retVal->handle = dav_method_bind;
+    retVal->is_allow = dav_is_allow_method_bind;
+
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_rebind_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    retVal->handle = dav_method_rebind;
+    retVal->is_allow = dav_is_allow_method_rebind;
+
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_unbind_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    retVal->handle = dav_method_unbind;
+    retVal->is_allow = dav_is_allow_method_unbind;
+
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static dav_method *make_search_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_search;
+    retVal->is_allow = dav_is_allow_method_get;
+    
+    return retVal;
+}
+
+static dav_method *make_acl_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_acl;
+    retVal->is_allow = dav_is_allow_method_acl;
+
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
+static void dav_add_method(dav_all_methods *methods, int method_number, dav_method *m, apr_pool_t *p)
+{
+    int *buf;
+    buf = (int *)apr_pcalloc(p, sizeof(*buf));
+    *buf = method_number;
+    apr_hash_set(methods->method_hash, buf, sizeof(*buf), m);
+}
+
+dav_all_methods *dav_all_methods_new(apr_pool_t *p)
+{
+    dav_all_methods *retVal;
+
+    retVal = (dav_all_methods *)apr_pcalloc(p, sizeof(*retVal));
+    retVal->method_hash = apr_hash_make(p);
+    
+    dav_add_method( retVal, M_GET, make_get_method(p), p );
+    dav_add_method( retVal, M_PUT, make_put_method(p), p );
+    dav_add_method( retVal, M_POST, make_post_method(p), p );
+    dav_add_method( retVal, M_DELETE, make_delete_method(p), p );
+    dav_add_method( retVal, M_OPTIONS, make_options_method(p), p );
+    dav_add_method( retVal, M_PROPFIND, make_propfind_method(p), p );
+    dav_add_method( retVal, M_PROPPATCH, make_proppatch_method(p), p );
+    dav_add_method( retVal, M_MKCOL, make_mkcol_method(p), p );
+    dav_add_method( retVal, M_COPY, make_copy_method(p), p );
+    dav_add_method( retVal, M_MOVE, make_move_method(p), p );
+    dav_add_method( retVal, M_LOCK, make_lock_method(p), p );
+    dav_add_method( retVal, M_UNLOCK, make_unlock_method(p), p );
+    dav_add_method( retVal, M_VERSION_CONTROL, make_vsn_control_method(p), p );
+    dav_add_method( retVal, M_CHECKOUT, make_checkout_method(p), p );
+    dav_add_method( retVal, M_UNCHECKOUT, make_uncheckout_method(p), p );
+    dav_add_method( retVal, M_CHECKIN, make_checkin_method(p), p );
+    dav_add_method( retVal, M_UPDATE, make_update_method(p), p );
+    dav_add_method( retVal, M_LABEL, make_label_method(p), p );
+    dav_add_method( retVal, M_REPORT, make_report_method(p), p );
+    dav_add_method( retVal, M_MKWORKSPACE, make_make_workspace_method(p), p );
+    dav_add_method( retVal, M_MKACTIVITY, make_make_activity_method(p), p );
+    dav_add_method( retVal, M_BASELINE_CONTROL, make_baseline_control_method(p), p );
+    dav_add_method( retVal, M_MERGE, make_merge_method(p), p );
+    
+    /* Register DAV methods */
+    dav_methods[DAV_M_BIND] = ap_method_register(p, "BIND");
+    dav_methods[DAV_M_UNBIND] = ap_method_register(p, "UNBIND");
+    dav_methods[DAV_M_REBIND] = ap_method_register(p, "REBIND");
+    dav_methods[DAV_M_SEARCH] = ap_method_register(p, "SEARCH");
+    dav_methods[DAV_M_ACL] = ap_method_register(p, "ACL");
+    
+
+    /* BIND method */
+    dav_add_method( retVal, dav_methods[DAV_M_BIND], make_bind_method(p), p );
+    dav_add_method( retVal, dav_methods[DAV_M_UNBIND], make_unbind_method(p), p );
+    dav_add_method( retVal, dav_methods[DAV_M_REBIND], make_rebind_method(p), p );
+
+    /* DASL method */
+    dav_add_method( retVal, dav_methods[DAV_M_SEARCH], make_search_method(p), p );
+
+    /* ACL method */
+    dav_add_method( retVal, dav_methods[DAV_M_ACL], make_acl_method(p), p );
+
+    return retVal;
+}
+
+dav_method *dav_get_method(dav_all_methods *methods, request_rec *r)
+{
+    if (!methods) return NULL;
+    return (dav_method *)apr_hash_get(methods->method_hash, &(r->method_number), sizeof(r->method_number));
+}
+
+static int dav_init_handler(apr_pool_t *p, apr_pool_t *plog, apr_pool_t *ptemp,
+                             server_rec *s)
+{
+    /* DBG0("dav_init_handler"); */
+
+    /* Register DAV methods */
+    dav_registered_methods = dav_all_methods_new(p);
+
+    ap_add_version_component(p, "DAV/2");
+
+    return OK;
+}
+
+static int dav_dispatch_method(request_rec *r)
+{
+    dav_method *method;
+    const dav_hooks_acl *acl_hooks;
+    const dav_principal *principal;
+    int is_allow = TRUE;
+    dav_resource *resource;
+    dav_error *err = NULL;
+    dav_request *dav_r = apr_pcalloc(r->pool, sizeof(dav_request));
+    int resource_state, result;
+
+    dav_r->request = r;
+
+    method = dav_get_method(dav_registered_methods, r);
+    if(!method) {
+    	return HTTP_NOT_IMPLEMENTED;
+    }
+
+    acl_hooks = dav_get_acl_hooks(r);
+  
+    if ( acl_hooks )
+    {
+        principal = dav_principal_make_from_request(r);
+        /* Bypassing acl's for PUT user (creating a new user) 
+          is_allow = TRUE; */
+        is_allow = dav_is_method_allow(method, dav_r, acl_hooks, principal);
+    }
+
+    resource = dav_r->resource;
+
+    if (resource == NULL) err = dav_get_resource(r, 0, 0, &resource);
+    if (err) return dav_handle_err(r, err, NULL);
+    
+
+    if(!is_allow) {
+        /**
+         * According to Section 7.1.1 RFC2518bis,
+         * If an HTTP method fails due to insufficient privileges, 
+         * the response body to the "403 Forbidden" error MUST contain 
+         * the <DAV:error> element, which in turn contains 
+         * the <DAV:need-privileges> element, which contains one or more 
+         * <DAV:resource> elements indicating which resource had insufficient 
+         * privileges, and what the lacking privileges were.
+         *
+         * Assuming here, that dav_is_method_allow sets resource->err 
+         * to the appropriate DAV:error element.
+         */
+	return dav_handle_err(r, resource->err, NULL);
+    }
+
+    /* set up the ETag header for If-* header checks */
+    if ((err = (*resource->hooks->set_headers)(r, resource)) != NULL) {
+        err = dav_push_error(r->pool, err->status, 0,
+                             "Unable to set up HTTP headers.", err);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    resource_state = dav_get_resource_state(r, resource);
+    result = dav_meets_conditions(r, resource_state);
+
+    apr_table_unset(r->headers_out, "ETag");
+
+    if (result != OK) {
+        return result;
+    }
+
+    return dav_method_handle(method, dav_r);
+}
+
 static int dav_handler(request_rec *r)
 {
+    int retVal, num_tries = 0, timeout = DAV_RETRY_MIN_TIMEOUT; 
+
     if (strcmp(r->handler, DAV_HANDLER_NAME) != 0)
         return DECLINED;
 
@@ -4624,112 +7178,37 @@ static int dav_handler(request_rec *r)
      * ### also, there is the issue with other methods (see ISSUES)
      */
 
+    /* keep a backup of request_rec */ 	 	 
+
     /* dispatch the appropriate method handler */
-    if (r->method_number == M_GET) {
-        return dav_method_get(r);
+    retVal = dav_dispatch_method(r);
+    while(retVal == HTTP_SERVICE_UNAVAILABLE && num_tries < DAV_REQ_MAX_TRIES) {
+        /* revert to the original request_rec */
+
+        /* if we got a 503, wait a moment, then retry */ 
+        DBG3("Retrying transaction for %s: try(%d) timeout(%d)",
+             r->method, num_tries, timeout);
+        apr_sleep(timeout);
+        retVal = dav_dispatch_method(r);
+
+        /* exponential back-off */ 	 
+        timeout *= 2;
+        num_tries++;
     }
 
-    if (r->method_number == M_PUT) {
-        return dav_method_put(r);
+    /* Set Retry-After header for 503 response,
+     * returned for e.g. upon a transaction deadlock*/
+    if(retVal == HTTP_SERVICE_UNAVAILABLE) {
+        apr_table_setn(r->err_headers_out, "Retry-After",
+                       DAV_CLIENT_RETRY_MIN_TIMEOUT);
+        if (r->expecting_100) {
+            r->status = HTTP_SERVICE_UNAVAILABLE;
+            expect_100_fixups(r);
+            return DONE;
+        }
     }
 
-    if (r->method_number == M_POST) {
-        return dav_method_post(r);
-    }
-
-    if (r->method_number == M_DELETE) {
-        return dav_method_delete(r);
-    }
-
-    if (r->method_number == M_OPTIONS) {
-        return dav_method_options(r);
-    }
-
-    if (r->method_number == M_PROPFIND) {
-        return dav_method_propfind(r);
-    }
-
-    if (r->method_number == M_PROPPATCH) {
-        return dav_method_proppatch(r);
-    }
-
-    if (r->method_number == M_MKCOL) {
-        return dav_method_mkcol(r);
-    }
-
-    if (r->method_number == M_COPY) {
-        return dav_method_copymove(r, DAV_DO_COPY);
-    }
-
-    if (r->method_number == M_MOVE) {
-        return dav_method_copymove(r, DAV_DO_MOVE);
-    }
-
-    if (r->method_number == M_LOCK) {
-        return dav_method_lock(r);
-    }
-
-    if (r->method_number == M_UNLOCK) {
-        return dav_method_unlock(r);
-    }
-
-    if (r->method_number == M_VERSION_CONTROL) {
-        return dav_method_vsn_control(r);
-    }
-
-    if (r->method_number == M_CHECKOUT) {
-        return dav_method_checkout(r);
-    }
-
-    if (r->method_number == M_UNCHECKOUT) {
-        return dav_method_uncheckout(r);
-    }
-
-    if (r->method_number == M_CHECKIN) {
-        return dav_method_checkin(r);
-    }
-
-    if (r->method_number == M_UPDATE) {
-        return dav_method_update(r);
-    }
-
-    if (r->method_number == M_LABEL) {
-        return dav_method_label(r);
-    }
-
-    if (r->method_number == M_REPORT) {
-        return dav_method_report(r);
-    }
-
-    if (r->method_number == M_MKWORKSPACE) {
-        return dav_method_make_workspace(r);
-    }
-
-    if (r->method_number == M_MKACTIVITY) {
-        return dav_method_make_activity(r);
-    }
-
-    if (r->method_number == M_BASELINE_CONTROL) {
-        return dav_method_baseline_control(r);
-    }
-
-    if (r->method_number == M_MERGE) {
-        return dav_method_merge(r);
-    }
-
-    /* BIND method */
-    if (r->method_number == dav_methods[DAV_M_BIND]) {
-        return dav_method_bind(r);
-    }
-
-    /* DASL method */
-    if (r->method_number == dav_methods[DAV_M_SEARCH]) {
-        return dav_method_search(r);
-    }
-
-    /* ### add'l methods for Advanced Collections, ACLs */
-
-    return DECLINED;
+    return retVal;
 }
 
 static int dav_fixups(request_rec *r)
@@ -4769,6 +7248,19 @@ static int dav_fixups(request_rec *r)
         if (!conf->provider->repos->handle_get) {
             return DECLINED;
         }
+
+        if (r->main) {
+            /* If this is a subrequest */
+            const char *no_lookup = apr_table_get
+              (r->main->subprocess_env, "DAV_NO_LOOKUP");
+            if (!no_lookup || strcmp(no_lookup, "true")) {
+                dav_resource *resource = NULL;
+                dav_error *err = NULL;
+                err = dav_get_resource(r, 0, 0, &resource);
+                if (err || !resource->exists)
+                    return HTTP_NOT_FOUND;
+            }
+        }
     }
 
     /* ### this is wrong.  We should only be setting the r->handler for the
@@ -4787,11 +7279,42 @@ static int dav_fixups(request_rec *r)
     return DECLINED;
 }
 
+static int dav_check_user_id(request_rec *r)
+{
+    dav_dir_conf *conf;
+    conf = (dav_dir_conf *)ap_get_module_config(r->per_dir_config,
+                                                &dav_module);
+    /* if DAV is not enabled, then we've got nothing to do */
+    if (conf->provider == NULL) {
+        return DECLINED;
+    }
+
+    if (conf->allow_unauthenticated_access != 1) {
+        return DECLINED;
+    }
+
+    if (apr_table_get(r->headers_in, (PROXYREQ_PROXY == r->proxyreq)
+                      ? "Proxy-Authorization" : "Authorization")) {
+        if (r->user && !strcmp(r->user, "unauthenticated")) {
+            ap_note_auth_failure(r);
+            return HTTP_UNAUTHORIZED;
+        }
+        return DECLINED;
+    }
+
+    if (r->user)
+        return DECLINED;
+    
+    r->user = "unauthenticated";
+    return OK;
+}
+
 static void register_hooks(apr_pool_t *p)
 {
-    ap_hook_handler(dav_handler, NULL, NULL, APR_HOOK_MIDDLE);
     ap_hook_post_config(dav_init_handler, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_check_user_id(dav_check_user_id, NULL, NULL, APR_HOOK_FIRST);
     ap_hook_fixups(dav_fixups, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_handler(dav_handler, NULL, NULL, APR_HOOK_MIDDLE);
 
     dav_hook_find_liveprop(dav_core_find_liveprop, NULL, NULL, APR_HOOK_LAST);
     dav_hook_insert_all_liveprops(dav_core_insert_all_liveprops,
@@ -4820,6 +7343,16 @@ static const command_rec dav_cmds[] =
     AP_INIT_FLAG("DAVDepthInfinity", dav_cmd_davdepthinfinity, NULL,
                  ACCESS_CONF|RSRC_CONF,
                  "allow Depth infinity PROPFIND requests"),
+
+    AP_INIT_FLAG("DAVUnauthenticatedAccess", ap_set_flag_slot,
+                 (void *)APR_OFFSETOF(dav_dir_conf, allow_unauthenticated_access), ACCESS_CONF,
+                 "Disable this module's authorization and authentication hacks for this location"),
+
+    AP_INIT_TAKE2("DAVResponseRewriteCond", dav_cmd_davresponserewritecond, NULL,
+                  ACCESS_CONF|RSRC_CONF, "response uri rewrite condition"),
+
+    AP_INIT_TAKE2("DAVResponseRewriteRule", dav_cmd_davresponserewriterule, NULL,
+                  ACCESS_CONF|RSRC_CONF, "response uri rewrite rule"),
 
     { NULL }
 };

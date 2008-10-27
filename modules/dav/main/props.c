@@ -648,7 +648,8 @@ DAV_DECLARE(dav_get_props_result) dav_get_allprops(dav_propdb *propdb,
         } /* propdb->db != NULL */
 
         /* add namespaces for all the liveprop providers */
-        dav_add_all_liveprop_xmlns(propdb->p, &hdr_ns);
+        if (what == DAV_PROP_INSERT_NAME)
+            dav_add_all_liveprop_xmlns(propdb->p, &hdr_ns);
     }
 
     /* ask the liveprop providers to insert their properties */
@@ -694,12 +695,13 @@ DAV_DECLARE(dav_get_props_result) dav_get_allprops(dav_propdb *propdb,
 }
 
 DAV_DECLARE(dav_get_props_result) dav_get_props(dav_propdb *propdb,
-                                                apr_xml_doc *doc)
+                                                apr_xml_elem *prop_elem)
 {
     const dav_hooks_db *db_hooks = propdb->db_hooks;
-    apr_xml_elem *elem = dav_find_child(doc->root, "prop");
+    apr_xml_elem *elem = prop_elem;
     apr_text_header hdr_good = { 0 };
     apr_text_header hdr_bad = { 0 };
+    apr_text_header hdr_403 = { 0 };
     apr_text_header hdr_ns = { 0 };
     int have_good = 0;
     dav_get_props_result result = { 0 };
@@ -729,6 +731,12 @@ DAV_DECLARE(dav_get_props_result) dav_get_props(dav_propdb *propdb,
         dav_error *err;
         dav_prop_insert inserted;
         dav_prop_name name;
+
+        if (elem->ns == APR_XML_NS_NONE)
+            name.ns = "";
+        else
+            name.ns = APR_XML_GET_URI_ITEM(propdb->ns_xlate, elem->ns);
+        name.name = elem->name;
 
         /*
         ** First try live property providers; if they don't handle
@@ -784,6 +792,16 @@ DAV_DECLARE(dav_get_props_result) dav_get_props(dav_propdb *propdb,
                 /* nothing to do. fall thru to allow property to be handled
                    as a dead property */
             }
+            else if (inserted == DAV_PROP_INSERT_FORBIDDEN) {
+                if (hdr_403.first == NULL)
+                    apr_text_append(propdb->p, &hdr_403,
+                                    "<D:propstat>" DEBUG_CR
+                                    "<D:prop>" DEBUG_CR);
+
+                /* output this property's name (into the forbidden propstats) */
+                dav_output_prop_name(propdb->p, &name, xi, &hdr_403);
+                continue;
+            }
 #if DAV_DEBUG
             else {
 #if 0
@@ -804,12 +822,6 @@ DAV_DECLARE(dav_get_props_result) dav_get_props(dav_propdb *propdb,
             /* ### what to do with db open error? */
             (void) dav_really_open_db(propdb, 1 /*ro*/);
         }
-
-        if (elem->ns == APR_XML_NS_NONE)
-            name.ns = "";
-        else
-            name.ns = APR_XML_GET_URI_ITEM(propdb->ns_xlate, elem->ns);
-        name.name = elem->name;
 
         /* only bother to look if a database exists */
         if (propdb->db != NULL) {
@@ -874,6 +886,20 @@ DAV_DECLARE(dav_get_props_result) dav_get_props(dav_propdb *propdb,
         }
     }
 
+    if (hdr_403.first != NULL) {
+        /* "close" the bad propstat */
+        char *perm_denied_txt = 
+          apr_psprintf(propdb->p, "</D:prop>" DEBUG_CR "<D:status>HTTP/1.1 %s </D:status>"
+                       "</D:propstat>" DEBUG_CR,
+                       ap_get_status_line(dav_get_permission_denied_status(propdb->r)));
+        apr_text_append(propdb->p, &hdr_403, perm_denied_txt);
+        if (hdr_bad.first != NULL)
+            hdr_bad.last->next = hdr_403.first;
+        else if (have_good)
+            hdr_good.last->next = hdr_403.first;
+        else result.propstats = hdr_403.first;
+    }
+
     /* add in all the various namespaces, and return them */
     dav_xmlns_generate(xi, &hdr_ns);
     result.xmlns = hdr_ns.first;
@@ -931,9 +957,12 @@ DAV_DECLARE_NONSTD(void) dav_prop_validate(dav_prop_ctx *ctx)
     }
 
     if (!dav_rw_liveprop(propdb, priv)) {
-        ctx->err = dav_new_error(propdb->p, HTTP_CONFLICT,
-                                 DAV_ERR_PROP_READONLY,
-                                 "Property is read-only.");
+        ctx->err = dav_new_error_tag(propdb->p, HTTP_FORBIDDEN,
+                                     DAV_ERR_PROP_READONLY,
+                                     "Property is read-only.",
+                                     NULL,
+                                     "cannot-modify-protected-property",
+                                     NULL);
         return;
     }
 
@@ -1001,8 +1030,17 @@ DAV_DECLARE_NONSTD(void) dav_prop_exec(dav_prop_ctx *ctx)
     dav_propdb *propdb = ctx->propdb;
     dav_error *err = NULL;
     dav_elem_private *priv = ctx->prop->priv;
+    const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(ctx->r);
+    dav_prop_name name;
 
     ctx->rollback = apr_pcalloc(propdb->p, sizeof(*ctx->rollback));
+
+    if (ctx->prop->ns == APR_XML_NS_NONE)
+        name.ns = "";
+    else
+        name.ns = APR_XML_GET_URI_ITEM(propdb->ns_xlate, ctx->prop->ns);
+    name.name = ctx->prop->name;
+
 
     if (ctx->is_liveprop) {
         err = (*priv->provider->patch_exec)(propdb->resource,
@@ -1011,14 +1049,6 @@ DAV_DECLARE_NONSTD(void) dav_prop_exec(dav_prop_ctx *ctx)
                                             &ctx->rollback->liveprop);
     }
     else {
-        dav_prop_name name;
-
-        if (ctx->prop->ns == APR_XML_NS_NONE)
-            name.ns = "";
-        else
-            name.ns = APR_XML_GET_URI_ITEM(propdb->ns_xlate, ctx->prop->ns);
-        name.name = ctx->prop->name;
-
         /* save the old value so that we can do a rollback. */
         if ((err = (*propdb->db_hooks
                     ->get_rollback)(propdb->db, &name,
@@ -1049,16 +1079,35 @@ DAV_DECLARE_NONSTD(void) dav_prop_exec(dav_prop_ctx *ctx)
         }
     }
 
-  error:
+    if(acl_hooks) {
+
+        /* update any DAV:property ACE(s) that depend on this property */
+        const char *newval = 
+            dav_xml_get_cdata(dav_find_child(ctx->prop, "href"), propdb->p, 1);
+
+        /* @NOTE: works only in presence of transactions,
+         * currently no rollback state being stored for ACE changes */
+        /* assuming cdata is NULL for D:remove prop elem */
+        if(newval)
+            (*acl_hooks->update_principal_property_aces)(
+                (dav_resource *)propdb->resource, &name, newval);
+    }
+
+error:
     /* push a more specific error here */
     if (err != NULL) {
-        /*
-        ** Use HTTP_INTERNAL_SERVER_ERROR because we shouldn't have seen
-        ** any errors at this point.
-        */
-        ctx->err = dav_push_error(propdb->p, HTTP_INTERNAL_SERVER_ERROR,
-                                  DAV_ERR_PROP_EXEC,
-                                  "Could not execute PROPPATCH.", err);
+        if (err->status == HTTP_CONFLICT) {
+            /* semantics of the value are not appropriate for the property */
+            ctx->err = err;
+        } else {
+            /*
+            ** Use HTTP_INTERNAL_SERVER_ERROR because we shouldn't have seen
+            ** any other errors at this point.
+            */
+            ctx->err = dav_push_error(propdb->p, HTTP_INTERNAL_SERVER_ERROR,
+                                      DAV_ERR_PROP_EXEC,
+                                      "Could not execute PROPPATCH.", err);
+        }
     }
 }
 

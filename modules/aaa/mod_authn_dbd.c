@@ -24,6 +24,7 @@
 #include "apr_strings.h"
 #include "mod_auth.h"
 #include "apr_md5.h"
+#include "util_md5.h"
 #include "apu_version.h"
 
 module AP_MODULE_DECLARE_DATA authn_dbd_module;
@@ -96,6 +97,9 @@ static authn_status authn_dbd_password(request_rec *r, const char *user,
     authn_dbd_conf *conf = ap_get_module_config(r->per_dir_config,
                                                 &authn_dbd_module);
     ap_dbd_t *dbd = authn_dbd_acquire_fn(r);
+
+    char *digest_colon = NULL;
+    
     if (dbd == NULL) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "Failed to acquire database connection to look up "
@@ -168,6 +172,25 @@ static authn_status authn_dbd_password(request_rec *r, const char *user,
         return AUTH_USER_NOT_FOUND;
     }
 
+    if ((digest_colon = ap_strchr(dbd_password, ':'))) {
+        const char *realm = NULL, *exp_hash = NULL;
+        const char *act_hash = NULL;
+        
+        realm = apr_pstrndup(r->pool, dbd_password, digest_colon - dbd_password);
+        exp_hash = digest_colon + 1;
+
+        act_hash = ap_md5(r->pool,
+                          (unsigned char*) apr_pstrcat(r->pool, user, ":",
+                                                       realm, ":", password, NULL));
+
+        if (strcmp(act_hash, exp_hash)) {
+            return AUTH_DENIED;
+        }
+        else {
+            return AUTH_GRANTED;
+        }
+    }
+    
     rv = apr_password_validate(password, dbd_password);
 
     if (rv != APR_SUCCESS) {

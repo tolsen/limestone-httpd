@@ -48,6 +48,10 @@ extern "C" {
 #define DAV_XML_HEADER          "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
 #define DAV_XML_CONTENT_TYPE    "text/xml; charset=\"utf-8\""
 
+#define DAV_MOUNT_CONTENT_TYPE  "application/davmount+xml"
+#define DAV_MOUNT_QUERY         "action=davmount"
+#define DAV_MOUNT_XMLNS         "\"http://purl.org/NET/webdav/mount\""
+
 #define DAV_READ_BLOCKSIZE      2048    /* used for reading input blocks */
 
 #define DAV_RESPONSE_BODY_1     "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>"
@@ -59,6 +63,10 @@ extern "C" {
 #define DAV_DO_COPY             0
 #define DAV_DO_MOVE             1
 
+#define DAV_RETRY_MIN_TIMEOUT   100000  /* 0.1 sec */
+#define DAV_REQ_MAX_TRIES       4
+
+#define DAV_CLIENT_RETRY_MIN_TIMEOUT "120"  /* 2 minutes */
 
 #if 1
 #define DAV_DEBUG        1
@@ -127,6 +135,7 @@ typedef struct dav_error {
 
     const char *namespace;      /* [optional] namespace of error */
     const char *tagname;        /* name of error-tag */
+    const char *content;
 
     struct dav_error *prev;     /* previous error (in stack) */
 
@@ -148,7 +157,8 @@ DAV_DECLARE(dav_error*) dav_new_error(apr_pool_t *p, int status,
 DAV_DECLARE(dav_error*) dav_new_error_tag(apr_pool_t *p, int status, 
                                           int error_id, const char *desc,
                                           const char *namespace,
-                                          const char *tagname);
+                                          const char *tagname,
+                                          const char *content);
 
 
 /*
@@ -198,6 +208,9 @@ DAV_DECLARE(dav_error*) dav_push_error(apr_pool_t *p, int status, int error_id,
 #define DAV_ERR_LOCK_PARSE_TOKEN        404    /* bad opaquelocktoken */
 #define DAV_ERR_LOCK_SAVE_LOCK          405    /* err saving locks */
 
+/* Quota errors */
+#define DAV_ERR_QUOTA_INSUFFICIENT      500     /* insufficient quota */
+
 /*
 ** Some comments on Error ID values:
 **
@@ -236,6 +249,8 @@ typedef struct dav_hooks_repository dav_hooks_repository;
 typedef struct dav_hooks_liveprop dav_hooks_liveprop;
 typedef struct dav_hooks_binding dav_hooks_binding;
 typedef struct dav_hooks_search dav_hooks_search;
+typedef struct dav_hooks_acl dav_hooks_acl;
+typedef struct dav_hooks_transaction dav_hooks_transaction;
 
 /* ### deprecated name */
 typedef dav_hooks_propdb dav_hooks_db;
@@ -275,7 +290,9 @@ typedef enum {
 
     DAV_RESOURCE_TYPE_ACTIVITY,         /* activity URL */
 
-    DAV_RESOURCE_TYPE_PRIVATE           /* repository-private type */
+    DAV_RESOURCE_TYPE_PRIVATE,           /* repository-private type */
+    
+    DAV_RESOURCE_TYPE_PRINCIPAL
 
 } dav_resource_type;
 
@@ -372,6 +389,8 @@ typedef struct dav_resource {
 
     const char *uri;    /* the URI for this resource */
 
+    const char *uuid;   /* the uuid of this resource */
+
     dav_resource_private *info;         /* the provider's private info */
 
     const dav_hooks_repository *hooks;  /* hooks used for this resource */
@@ -381,7 +400,29 @@ typedef struct dav_resource {
        long as the dav_resource structure. */
     apr_pool_t *pool;
 
+    /* dav_error associated with this resource */
+    dav_error *err;
+
 } dav_resource;
+
+DAV_DECLARE(dav_error *) dav_get_resource_from_uri(const char *uri, request_rec *r,
+                                                   int flags,
+                                                   request_rec **p_rec,
+                                                   dav_resource **p_resource);
+/*
+** BIND STRUCTURE
+*/
+
+typedef struct dav_bind {
+    dav_resource *collection;
+    const char *bind_name;
+    dav_resource *cur_resource;
+    dav_resource *new_resource;
+
+    struct dav_bind *next;
+
+    void *info;
+} dav_bind;
 
 /*
 ** Lock token type. Lock providers define the details of a lock token.
@@ -441,6 +482,12 @@ DAV_DECLARE(void) dav_buffer_place_mem(apr_pool_t *p, dav_buffer *pbuf,
 ** HANDY UTILITIES
 */
 
+DAV_DECLARE(dav_error) *dav_get_resource(request_rec *r, int label_allowed,
+                                         int use_checked_in, dav_resource **res_p);
+
+/* get a fully qualified request URL */
+const char *dav_get_full_url(request_rec *r, const char *uri);
+
 /* contains results from one of the getprop functions */
 typedef struct
 {
@@ -470,7 +517,10 @@ typedef struct
 
 
 DAV_DECLARE(dav_lookup_result) dav_lookup_uri(const char *uri, request_rec *r,
-                                              int must_be_absolute);
+                                              int must_be_absolute, 
+                                              int allow_cross_domain);
+
+const char *dav_get_response_href(request_rec *r, const char *uri);
 
 /* defines type of property info a provider is to return */
 typedef enum {
@@ -486,9 +536,11 @@ typedef enum {
                                    inserted into the text block */
     DAV_PROP_INSERT_VALUE,      /* a property name/value pair was inserted
                                    into the text block */
-    DAV_PROP_INSERT_SUPPORTED   /* a supported live property was added to
+    DAV_PROP_INSERT_SUPPORTED,  /* a supported live property was added to
                                    the text block as a
                                    <DAV:supported-live-property> element */
+    DAV_PROP_INSERT_FORBIDDEN   /* the user doesn't have the privilege to
+                                   read this property */
 } dav_prop_insert;
 
 /* ### this stuff is private to dav/fs/repos.c; move it... */
@@ -501,8 +553,12 @@ DAV_DECLARE(int) dav_get_depth(request_rec *r, int def_depth);
 
 DAV_DECLARE(int) dav_validate_root(const apr_xml_doc *doc,
                                    const char *tagname);
+DAV_DECLARE(int) dav_validate_root_no_ns(const apr_xml_doc *doc,
+                                         const char *tagname);
 DAV_DECLARE(apr_xml_elem *) dav_find_child(const apr_xml_elem *elem,
                                            const char *tagname);
+DAV_DECLARE(apr_xml_elem *) dav_find_child_no_ns(const apr_xml_elem *elem,
+                                                 const char *tagname);
 
 /* gather up all the CDATA into a single string */
 DAV_DECLARE(const char *) dav_xml_get_cdata(const apr_xml_elem *elem, apr_pool_t *pool,
@@ -587,6 +643,8 @@ typedef struct {
     const dav_hooks_vsn *vsn;
     const dav_hooks_binding *binding;
     const dav_hooks_search *search;
+    const dav_hooks_acl *acl;
+    const dav_hooks_transaction *transaction;
 
     void *ctx;
 } dav_provider;
@@ -638,11 +696,13 @@ APR_DECLARE_EXTERNAL_HOOK(dav, DAV, void, insert_all_liveprops,
                          (request_rec *r, const dav_resource *resource,
                           dav_prop_insert what, apr_text_header *phdr))
 
+DAV_DECLARE(const dav_hooks_repository *) dav_get_repos_hooks(request_rec *r);
 DAV_DECLARE(const dav_hooks_locks *) dav_get_lock_hooks(request_rec *r);
 DAV_DECLARE(const dav_hooks_propdb *) dav_get_propdb_hooks(request_rec *r);
 DAV_DECLARE(const dav_hooks_vsn *) dav_get_vsn_hooks(request_rec *r);
 DAV_DECLARE(const dav_hooks_binding *) dav_get_binding_hooks(request_rec *r);
 DAV_DECLARE(const dav_hooks_search *) dav_get_search_hooks(request_rec *r);
+DAV_DECLARE(const dav_hooks_acl *)dav_get_acl_hooks(request_rec *r);
 
 DAV_DECLARE(void) dav_register_provider(apr_pool_t *p, const char *name,
                                         const dav_provider *hooks);
@@ -655,6 +715,7 @@ DAV_DECLARE(const dav_provider *) dav_lookup_provider(const char *name);
 #define DAV_GET_HOOKS_VSN(r)            dav_get_vsn_hooks(r)
 #define DAV_GET_HOOKS_BINDING(r)        dav_get_binding_hooks(r)
 #define DAV_GET_HOOKS_SEARCH(r)         dav_get_search_hooks(r)
+#define DAV_GET_HOOKS_TRANSACTION(r)    dav_get_transaction_hooks(r)
 
 
 /* --------------------------------------------------------------------
@@ -830,7 +891,9 @@ struct dav_hooks_liveprop
                          void *context,
                          dav_liveprop_rollback *rollback_ctx);
 
-    /* ### doc... */
+    /* ### The provider can set this function to NULL if transaction hooks
+    **     are provided
+    */
     dav_error * (*patch_rollback)(const dav_resource *resource,
                                   int operation,
                                   void *context,
@@ -916,6 +979,13 @@ DAV_DECLARE_NONSTD(void) dav_core_insert_all_liveprops(
     apr_text_header *phdr);
 DAV_DECLARE_NONSTD(void) dav_core_register_uris(apr_pool_t *p);
 
+/* 
+** This is a helper function that handles supported-*-set properties
+*/
+dav_error *dav_gen_supported_options(
+    request_rec *r,
+    const dav_resource *resource,
+    int propid, apr_text_header *body);
 
 /*
 ** Standard WebDAV Property Identifiers
@@ -974,8 +1044,11 @@ enum {
     DAV_PROPID_eclipsed_set,
     DAV_PROPID_label_name_set,
     DAV_PROPID_merge_set,
+    DAV_PROPID_owner,
     DAV_PROPID_precursor_set,
     DAV_PROPID_predecessor_set,
+    DAV_PROPID_quota_available_bytes,
+    DAV_PROPID_quota_used_bytes,
     DAV_PROPID_root_version,
     DAV_PROPID_subactivity_set,
     DAV_PROPID_subbaseline_set,
@@ -991,6 +1064,24 @@ enum {
     DAV_PROPID_version_name,
     DAV_PROPID_workspace,
     DAV_PROPID_workspace_checkout_set,
+    DAV_PROPID_version_set,
+
+    /* Acl properties */
+    DAV_PROPID_group,
+    DAV_PROPID_supported_privilege_set,
+    DAV_PROPID_current_user_privilege_set,
+    DAV_PROPID_acl,
+    DAV_PROPID_acl_restrictions,
+    DAV_PROPID_inherited_acl_set,
+    DAV_PROPID_principal_collection_set,
+    DAV_PROPID_group_member_set,
+
+    /* BIND properties */
+    DAV_PROPID_resource_id,
+    DAV_PROPID_parent_set,
+
+    /* SEARCH properties */
+    DAV_PROPID_supported_query_grammar_set,
 
     DAV_PROPID_END
 };
@@ -1114,6 +1205,8 @@ struct dav_hooks_propdb
 
     /*
     ** Rollback support: get rollback context, and apply it.
+    ** NOTE: A provider can set the rollback functions to NULL if
+    **       transaction hooks are provided
     **
     ** struct dav_deadprop_rollback is a provider-private structure; it
     ** should remember the name, and the name's old value (or the fact that
@@ -1179,7 +1272,8 @@ typedef enum {
 typedef enum {
     DAV_LOCKREC_DIRECT,             /* lock asserted on this resource */
     DAV_LOCKREC_INDIRECT,           /* lock inherited from a parent */
-    DAV_LOCKREC_INDIRECT_PARTIAL    /* most info is not filled in */
+    DAV_LOCKREC_INDIRECT_PARTIAL,   /* most info is not filled in */
+    DAV_LOCKREC_URI
 } dav_lock_rectype;
 
 /*
@@ -1212,7 +1306,7 @@ typedef enum {
 ** found.
 ** ### hrm. that says the abstraction is wrong. is_locknull may disappear.
 */
-typedef struct dav_lock
+typedef struct _dav_lock
 {
     dav_lock_rectype rectype;   /* type of lock record */
     int is_locknull;            /* lock establishes a locknull resource */
@@ -1229,9 +1323,14 @@ typedef struct dav_lock
     const char *owner;          /* (XML) owner of the lock */
     const char *auth_user;      /* auth'd username owning lock */
 
+    const char *lockroot;
+    const char *post_bind_uri;
+
+    int validated;
+
     dav_lock_private *info;     /* private to the lockdb */
 
-    struct dav_lock *next;      /* for managing a list of locks */
+    struct _dav_lock *next;      /* for managing a list of locks */
 } dav_lock;
 
 /* Property-related public lock functions */
@@ -1241,7 +1340,7 @@ DAV_DECLARE(const char *)dav_lock_get_activelock(request_rec *r,
 
 /* LockDB-related public lock functions */
 DAV_DECLARE(dav_error *) dav_lock_parse_lockinfo(request_rec *r,
-                                                 const dav_resource *resrouce,
+                                                 dav_resource *resrouce,
                                                  dav_lockdb *lockdb,
                                                  const apr_xml_doc *doc,
                                                  dav_lock **lock_request);
@@ -1254,7 +1353,7 @@ DAV_DECLARE(dav_error *) dav_add_lock(request_rec *r,
                                       dav_response **response);
 DAV_DECLARE(dav_error *) dav_notify_created(request_rec *r,
                                             dav_lockdb *lockdb,
-                                            const dav_resource *resource,
+                                            dav_resource *resource,
                                             int resource_state,
                                             int depth);
 
@@ -1263,12 +1362,19 @@ DAV_DECLARE(dav_error*) dav_lock_query(dav_lockdb *lockdb,
                                        dav_lock **locks);
 
 DAV_DECLARE(dav_error *) dav_validate_request(request_rec *r,
-                                              dav_resource *resource,
                                               int depth,
-                                              dav_locktoken *locktoken,
-                                              dav_response **response,
+                                              dav_lockdb *lockdb,
+                                              dav_bind *bind,
+                                              dav_bind *unbind,
                                               int flags,
-                                              dav_lockdb *lockdb);
+                                              int resource_state,
+                                              dav_response **response,
+                                              dav_lock **p_refresh_locks,
+                                              dav_lock **p_remove_locks);
+
+DAV_DECLARE(int) dav_meets_conditions(request_rec *r, int resource_state);
+
+
 /*
 ** flags:
 **    0x0F -- reserved for <dav_lock_scope> values
@@ -1281,6 +1387,12 @@ DAV_DECLARE(dav_error *) dav_validate_request(request_rec *r,
                                            the 424 DAV:response */
 #define DAV_VALIDATE_USE_424    0x0080  /* return 424 status, not 207 */
 #define DAV_VALIDATE_IS_PARENT  0x0100  /* for internal use */
+
+#define DAV_VALIDATE_BIND 0x0200
+#define DAV_VALIDATE_UNBIND 0x0400
+#define DAV_VALIDATE_IGNORE_TARGET_LOCKS 0x0800 /* used for validating copy w overwrite */
+#define DAV_VALIDATE_NEW_LOCK 0x1000
+#define DAV_VALIDATE_UNLOCK 0x2000
 
 /* Lock-null related public lock functions */
 DAV_DECLARE(int) dav_get_resource_state(request_rec *r,
@@ -1358,7 +1470,7 @@ struct dav_hooks_locks
     /* Take a resource out of the lock-null state. */
     dav_error * (*remove_locknull_state)(
         dav_lockdb *lockdb,
-        const dav_resource *resource
+        dav_resource *resource
     );
 
     /*
@@ -1368,7 +1480,7 @@ struct dav_hooks_locks
     ** The lock provider may store private information into lock->info.
     */
     dav_error * (*create_lock)(dav_lockdb *lockdb,
-                               const dav_resource *resource,
+                               dav_resource *resource,
                                dav_lock **lock);
 
     /*
@@ -1458,9 +1570,9 @@ struct dav_hooks_locks
     */
     dav_error * (*refresh_locks)(dav_lockdb *lockdb,
                                  const dav_resource *resource,
-                                 const dav_locktoken_list *ltl,
-                                 time_t new_time,
-                                 dav_lock **locks);
+                                 dav_lock *locks,
+                                 time_t new_time);
+
 
     /*
     ** Look up the resource associated with a particular locktoken.
@@ -1482,6 +1594,16 @@ struct dav_hooks_locks
                                    const dav_locktoken *locktoken,
                                    const dav_resource *start_resource,
                                    const dav_resource **resource);
+
+    dav_error * (*get_bind_locks)(dav_lockdb *lockdb,
+                                  dav_bind *bind,
+                                  dav_lock **locks);
+
+    dav_error * (*get_locks_not_through_binds)(dav_lockdb *lockdb,
+                                               const dav_resource *resource,
+                                               const dav_bind *bind1,
+                                               const dav_bind *bind2,
+                                               dav_lock **locks);
 
     /*
     ** If a provider needs a context to associate with this hooks structure,
@@ -1517,7 +1639,7 @@ DAV_DECLARE(void) dav_close_propdb(dav_propdb *db);
 
 DAV_DECLARE(dav_get_props_result) dav_get_props(
     dav_propdb *db,
-    apr_xml_doc *doc);
+    apr_xml_elem *prop_elem);
 
 DAV_DECLARE(dav_get_props_result) dav_get_allprops(
     dav_propdb *db,
@@ -1585,6 +1707,7 @@ typedef struct dav_prop_ctx
 
     /* private to mod_dav.c */
     request_rec *r;
+    int no_process;
 
 } dav_prop_ctx;
 
@@ -1604,7 +1727,8 @@ DAV_DECLARE_NONSTD(void) dav_prop_rollback(dav_prop_ctx *ctx);
 enum {
     DAV_CALLTYPE_MEMBER = 1,    /* called for a member resource */
     DAV_CALLTYPE_COLLECTION,    /* called for a collection */
-    DAV_CALLTYPE_LOCKNULL       /* called for a locknull resource */
+    DAV_CALLTYPE_LOCKNULL,      /* called for a locknull resource */
+    DAV_CALLTYPE_BIND           /* called for an already reported resource */
 };
 
 typedef struct
@@ -1629,6 +1753,7 @@ typedef struct
 #define DAV_WALKTYPE_AUTH       0x0001  /* limit to authorized files */
 #define DAV_WALKTYPE_NORMAL     0x0002  /* walk normal files */
 #define DAV_WALKTYPE_LOCKNULL   0x0004  /* walk locknull resources */
+#define DAV_WALKTYPE_IGNORE_BINDS 0x0008 /* limit to one call per resource */
 
     /* callback function and a client context for the walk */
     dav_error * (*func)(dav_walk_resource *wres, int calltype);
@@ -1789,6 +1914,18 @@ struct dav_hooks_repository
         const dav_resource *res2
     );
 
+    /* Put function for creating USER */
+    /*
+    dav_error * (*create_user)(const dav_resource *res,
+                               const char *passwd);
+    */
+    
+    /* Put function for creating GROUP */
+    /*
+    dav_error * (*create_group)(const dav_resource *resource,
+                               const char *passwd,
+                               const char *creator);
+    */
     /*
     ** Open a stream for this resource, using the specified mode. The
     ** stream will be returned in *stream.
@@ -1935,13 +2072,16 @@ struct dav_hooks_repository
     /* Get the entity tag for a resource */
     const char * (*getetag)(const dav_resource *resource);
 
+    /* response href transformation */
+    const char *(*response_href_transform)(request_rec *r, const char *uri);
+
+    dav_error *(*set_collection_type)(dav_resource *resource, int resourcetype);
     /*
     ** If a provider needs a context to associate with this hooks structure,
     ** then this field may be used. In most cases, it will just be NULL.
     */
     void *ctx;
 };
-
 
 /* --------------------------------------------------------------------
 **
@@ -2331,6 +2471,16 @@ struct dav_hooks_vsn
                          ap_filter_t *output);
 
     /*
+    ** Mark a resource for checking-in when unlocked
+    */
+    dav_error * (*set_checkin_on_unlock)(dav_resource *resource);
+
+    /*
+    ** Is the resource marked to be checked-in on unlock?
+    */
+    int (*is_checkin_on_unlock)(dav_resource *resource);
+
+    /*
     ** If a provider needs a context to associate with this hooks structure,
     ** then this field may be used. In most cases, it will just be NULL.
     */
@@ -2356,15 +2506,24 @@ struct dav_hooks_binding {
      * the binding argument must be a resource which does not already
      * exist.
      */
-    dav_error * (*bind_resource)(const dav_resource *resource,
-                                 dav_resource *binding);
+    dav_error * (*bind_resource)(const dav_resource *resource, 
+                                 const dav_resource *collection, 
+                                 const char *segment,
+                                 dav_resource *new_binding);
 
+    dav_error * (*unbind_resource)(dav_resource *resource,
+                                   const dav_resource *collection,
+                                   const char *segment);
+    
+    dav_error * (*rebind_resource)(const dav_resource *collection, 
+                                   const char *segment,
+                                   dav_resource *href_res,
+                                   dav_resource *new_bind);
     /*
     ** If a provider needs a context to associate with this hooks structure,
     ** then this field may be used. In most cases, it will just be NULL.
     */
     void *ctx;
-
 };
 
 
@@ -2395,6 +2554,7 @@ struct dav_hooks_search {
      * and the responses (in the body) as the HTTP response.
      */
     dav_error * (*search_resource)(request_rec *r,
+                                   dav_resource *resource,
                                    dav_response **response);
 
     /*
@@ -2405,6 +2565,278 @@ struct dav_hooks_search {
 
 };
 
+/* --------------------------------------------------------------------
+**
+** My view of properies - AL
+*/
+
+typedef struct _dav_property dav_property;
+
+/* --------------------------------------------------------------------
+**
+** ACL FUNCTIONS
+*/
+struct _dav_principal {
+    enum { 
+        PRINCIPAL_ALL,                  /* DAV:all */
+        PRINCIPAL_AUTHENTICATED,        /* DAV:authenticated */
+        PRINCIPAL_UNAUTHENTICATED,      /* DAV:unauthenticated */
+        PRINCIPAL_HREF                  
+    } type;
+    dav_resource *resource;     /* resource corresponding to the principal */
+};
+
+typedef struct _dav_principal dav_principal;
+
+typedef enum {
+    DAV_PERMISSION_UNKNOWN = 0,
+    DAV_PERMISSION_ALL,
+    DAV_PERMISSION_READ,
+    DAV_PERMISSION_READ_ACL,
+    DAV_PERMISSION_READ_CURRENT_USER_PRIVILEGE_SET,
+    DAV_PERMISSION_WRITE_ACL,
+    DAV_PERMISSION_UNLOCK,
+    DAV_PERMISSION_WRITE,
+    DAV_PERMISSION_WRITE_PROPERTIES,
+    DAV_PERMISSION_WRITE_CONTENT,
+    DAV_PERMISSION_BIND,
+    DAV_PERMISSION_UNBIND,
+} dav_acl_permission_type;
+
+struct _dav_privilege
+{
+    dav_acl_permission_type type;
+    const char *ns;
+    const char *name;
+};
+
+typedef struct _dav_privilege dav_privilege;
+
+typedef struct _privilege_list privilege_list;
+
+struct _privilege_list {
+    const dav_privilege *node;
+    const privilege_list *next;
+};
+struct _dav_privileges
+{
+    const privilege_list *head_privilege;
+    apr_pool_t *pool;
+};
+
+typedef struct _dav_privileges dav_privileges;
+
+struct _dav_ace {
+    const dav_principal *principal;
+    const dav_privileges *privileges;
+    const dav_prop_name *property;  /* for DAV:property principal ACEs */
+    int is_deny;
+    int is_protected;
+    char *inherited;
+    void *info;
+};
+
+typedef struct _dav_ace dav_ace;
+
+typedef struct _ace_list ace_list;
+
+struct _ace_list {
+    const dav_ace *node;
+    const ace_list *next;
+};
+
+typedef struct _dav_acl dav_acl;
+
+struct _dav_ace_iterator {
+    const dav_acl *owner_acl;
+    const ace_list *current_ace;
+};
+
+struct _dav_privilege_iterator {
+    const dav_privileges *owner_privileges;
+    const privilege_list *current_privilege;
+};
+
+/* Opaque, repository-specific information for ACLs. */
+typedef struct dav_acl_private dav_acl_private;
+
+struct _dav_acl {
+    const dav_principal *owner;
+    const dav_principal *group;
+    const dav_resource *resource;
+    dav_acl_private *info;
+    const ace_list *head_ace;
+    ace_list *tail_ace;
+    apr_pool_t *pool;
+};
+
+#define DAV_PERMISSION_READ_SIGNATURE	"read"
+#define DAV_PERMISSION_WRITE_SIGNATURE	"write"
+#define DAV_PERMISSION_WRITE_PROPERTIES_SIGNATURE	"write-properties"
+#define DAV_PERMISSION_WRITE_CONTENT_SIGNATURE	"write-content"
+#define DAV_PERMISSION_UNLOCK_SIGNATURE	"unlock"
+#define DAV_PERMISSION_READ_ACL_SIGNATURE	"read-acl"
+#define DAV_PERMISSION_READ_CURRENT_USER_PRIVILEGE_SET_SIGNATURE	"read-current-user-privilege-set"
+#define DAV_PERMISSION_WRITE_ACL_SIGNATURE	"write-acl"
+#define DAV_PERMISSION_BIND_SIGNATURE	"bind"
+#define DAV_PERMISSION_UNBIND_SIGNATURE	"unbind"
+#define DAV_PERMISSION_ALL_SIGNATURE	"all"
+
+dav_principal* dav_principal_make_from_request(request_rec *r);
+dav_principal* dav_principal_make_from_url(request_rec *r, const char *url);
+
+int dav_get_permission_denied_status(request_rec *r);
+
+dav_acl *dav_acl_new(apr_pool_t *p, const dav_resource *resource, const dav_principal *owner, const dav_principal *group);
+int dav_clear_all_ace(dav_acl *acl);
+
+const dav_resource *dav_get_acl_resource(const dav_acl *acl);
+const dav_principal *dav_get_acl_owner(const dav_acl *acl);
+const dav_principal *dav_get_acl_group(const dav_acl *acl);
+int dav_set_acl_owner(dav_acl *acl, const dav_principal *owner);
+int dav_set_acl_group(dav_acl *acl, const dav_principal *group);
+
+typedef struct _dav_ace_iterator dav_ace_iterator;
+dav_ace_iterator *dav_acl_iterate(const dav_acl *acl);
+const dav_ace *dav_ace_iterator_next(dav_ace_iterator *iter);
+const dav_ace *dav_ace_iterator_peek(const dav_ace_iterator *iter);
+int dav_ace_iterator_more(const dav_ace_iterator *iter);
+int dav_ace_iterator_rewind(dav_ace_iterator *iter);
+
+int dav_add_ace(dav_acl *acl, const dav_ace *ace);
+
+dav_ace *dav_ace_new(apr_pool_t *p, const dav_principal *principal,
+                     const dav_prop_name *property,
+                     const dav_privileges *privileges, int is_deny, 
+                     char *inherited, int is_protected);
+
+const dav_principal *dav_get_ace_principal(const dav_ace *ace);
+
+const dav_prop_name *dav_get_ace_property(const dav_ace *ace);
+
+const dav_privileges *dav_get_ace_privileges(const dav_ace *ace);
+const char *dav_get_ace_inherited(const dav_ace *ace);
+void *dav_get_ace_info(const dav_ace *ace);
+void dav_set_ace_inherited(dav_ace *ace, char *inherited);
+void dav_set_ace_info(dav_ace *ace, void *info);
+int dav_is_deny_ace(const dav_ace *ace);
+int dav_is_protected_ace(const dav_ace *ace);
+
+dav_privileges *dav_privileges_new(apr_pool_t *p);
+int dav_add_privilege(dav_privileges *privileges, 
+                      const dav_privilege* privilege);
+
+typedef struct _dav_privilege_iterator dav_privilege_iterator;
+dav_privilege_iterator *dav_privilege_iterate(const dav_privileges *privileges);
+const dav_privilege *dav_privilege_iterator_next(dav_privilege_iterator *iter);
+const dav_privilege *dav_privilege_iterator_peek(const dav_privilege_iterator *iter);
+int dav_privilege_iterator_more(const dav_privilege_iterator *iter);
+int dav_privilege_iterator_rewind(dav_privilege_iterator *iter);
+
+dav_privilege *dav_privilege_new_by_type(apr_pool_t *p, 
+                                         dav_acl_permission_type privType);
+dav_privilege *dav_privilege_new_by_xml(apr_pool_t *p, 
+                                        apr_array_header_t *namespaces,
+                                        const apr_xml_elem *privilegeXmlElem);
+dav_privilege *dav_privilege_new_by_name(apr_pool_t *p, 
+                                         const char *ns, const char *name);
+
+const dav_privilege *dav_get_privilege(const dav_privileges *privileges, 
+                                       int index);
+const char *dav_get_privilege_name(const dav_privilege *privilege);
+const char *dav_get_privilege_namespace(const dav_privilege *privilege);
+
+dav_prop_name *dav_ace_property_new(apr_pool_t *pool, const char *ns, const char *name);
+
+/* acl provider hooks */
+struct dav_hooks_acl {
+    /* Get principal-url for a given username 
+     * Should also handle PRINCIPAL_ALL, 
+     * PRINCIPAL_AUTHENTICATED & PRINCIPAL_UNAUTHENTICATED */
+    dav_principal *(*get_prin_by_name)(request_rec *r, const char *username);
+
+    int (*is_allow)(const dav_principal *principal,
+		    dav_resource *resource,
+		    dav_acl_permission_type permission);
+
+    dav_error *(*create_initial_acl)(const dav_principal *owner, 
+                                     dav_resource *resource);
+
+    dav_error *(*set_acl)(const dav_acl *acl, dav_response **response);
+    
+    dav_acl *(*get_current_acl)(const dav_resource *resource);
+
+    void (*update_principal_property_aces)(dav_resource *resource, 
+                                           const dav_prop_name *name, 
+                                           const char *value);
+
+    dav_error *(*inherit_aces)(dav_resource *resource);
+
+    /*
+    ** If a provider needs a context to associate with this hooks structure,
+    ** then this field may be used. In most cases, it will just be NULL.
+    */
+    void *ctx;
+};
+
+/* --------------------------------------------------------------------
+**
+** TRANSACTION FUNCTIONS
+*/
+
+/*
+** Opaque, provider-specific information for a transaction.
+*/
+typedef struct dav_transaction_private dav_transaction_private;
+
+struct dav_transaction_t
+{
+    int mode;
+    int state;
+    /**
+     * Private struct to be filled by the provider.
+     */
+    dav_transaction_private *info;
+};
+
+typedef struct dav_transaction_t dav_transaction;
+
+/* hook functions to provide transaction capabilities */
+struct dav_hooks_transaction
+{
+    /* Start a transaction */
+    dav_error * (*start)(request_rec *r, dav_transaction **t);
+
+    /**
+     * Set the mode of transaction.
+     * COMMIT: Commit the transaction. 
+     * ROLLBACK: Rollback the transaction.
+     * IGNORE_ERRORS: Ignore errors and commit the transaction.
+     * return the new mode.
+     */
+    int (*mode_set)(dav_transaction *t, int mode);
+
+    /**
+     * End a transaction.
+     * Commit/Rollback is governed by transaction mode. 
+     */
+    dav_error * (*end)(dav_transaction *t);
+
+     /**
+     * If a provider needs a context to associate with this hook structure,
+     * then this field is to be used. In most cases, it will just be NULL.
+     */
+    void *ctx;
+};
+
+/* transaction modes */
+#define DAV_TRANSACTION_COMMIT          0x00
+#define DAV_TRANSACTION_ROLLBACK        0x01
+#define DAV_TRANSACTION_IGNORE_ERRORS   0x02
+
+/* transaction states */
+#define DAV_TRANSACTION_STATE_STARTED   0x01
+#define DAV_TRANSACTION_STATE_ENDED     0x02
 
 /* --------------------------------------------------------------------
 **
@@ -2418,6 +2850,10 @@ typedef struct {
     int propid;                          /* live property ID */
     const dav_hooks_liveprop *provider;  /* the provider defining this prop */
 } dav_elem_private;    
+
+typedef struct _dav_request dav_request;
+typedef struct _dav_method dav_method;
+typedef struct _dav_all_methods dav_all_methods;
 
 #ifdef __cplusplus
 }
