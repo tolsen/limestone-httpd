@@ -2319,8 +2319,14 @@ static int dav_method_acl(dav_request *dav_r)
     if(!err) 
         err = (*acl_hooks->set_acl)(new_acl, NULL);
 
-    if(err)
+    /* if there was an error in set_acl, rollback any changes to this point */ 
+    if(err) {
+        const dav_hooks_transaction *xaction_hooks = dav_get_transaction_hooks(r);
+        if (xaction_hooks && dav_r->trans)
+            xaction_hooks->mode_set(dav_r->trans, DAV_TRANSACTION_ROLLBACK);
+        
         return dav_handle_err(r, err, NULL);
+    }
 
     /* end transaction here, if one was started */
     if(dav_r->trans)
