@@ -1037,13 +1037,13 @@ static int dav_method_get(dav_request *dav_r)
 {
     request_rec *r = dav_r->request;
     dav_resource *resource = dav_r->resource;
+    int retVal;
     dav_error *err = NULL;
 
     /* look for QUERY_ARGS that have been extracted from the request 
      * and handle them appropriately */
     if(r->args) {
-        int retVal = dav_query_handler(r);
-        if (retVal != DECLINED)
+        if ((retVal = dav_query_handler(r)) != DECLINED)
             return retVal;
     }
 
@@ -1082,6 +1082,12 @@ static int dav_method_get(dav_request *dav_r)
 
     if (r->header_only) {
         return DONE;
+    }
+
+    /* Discard the body needed to handle Expect 100-Continue
+     * if this is an internal redirect (think ErrorDocument) */
+    if ((retVal = ap_discard_request_body(r)) != OK) {
+        return retVal;
     }
 
     /* okay... time to deliver the content */
