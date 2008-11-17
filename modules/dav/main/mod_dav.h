@@ -293,7 +293,9 @@ typedef enum {
 
     DAV_RESOURCE_TYPE_PRIVATE,           /* repository-private type */
     
-    DAV_RESOURCE_TYPE_PRINCIPAL
+    DAV_RESOURCE_TYPE_PRINCIPAL,
+
+    DAV_RESOURCE_TYPE_REDIRECTREF       /* redirect reference resource */
 
 } dav_resource_type;
 
@@ -2846,13 +2848,20 @@ struct dav_hooks_transaction
 */
 
 typedef enum {
+    DAV_REDIRECTREF_NULL,
+    DAV_REDIRECTREF_INVALID,
     DAV_REDIRECTREF_TEMPORARY,
     DAV_REDIRECTREF_PERMANENT
 } dav_redirectref_lifetime;
 
 struct dav_hooks_redirect {
-    /* Create a redirect reference resource */
+    /* Create a redirect reference */
     dav_error * (*create_redirectref)(dav_resource *resource, 
+                                      const char *reftarget,
+                                      dav_redirectref_lifetime t);
+
+    /* Update a redirect reference */
+    dav_error * (*update_redirectref)(dav_resource *resource, 
                                       const char *reftarget,
                                       dav_redirectref_lifetime t);
 };

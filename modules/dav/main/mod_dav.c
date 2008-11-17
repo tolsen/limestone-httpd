@@ -156,6 +156,7 @@ enum {
     DAV_M_SEARCH,
     DAV_M_ACL,
     DAV_M_MKREDIRECTREF,
+    DAV_M_UPDATEREDIRECTREF,
     DAV_M_LAST
 };
 static int dav_methods[DAV_M_LAST];
@@ -6596,6 +6597,23 @@ static int dav_method_bind(dav_request *dav_r)
     return dav_created(r, binding_rec->uri, "Binding", 0);
 }
 
+static dav_redirectref_lifetime parse_lifetime(apr_xml_elem *root)
+{
+    apr_xml_elem *lifetime_elem;
+    dav_redirectref_lifetime t;
+
+    if ((lifetime_elem = dav_find_child(root, "redirect-lifetime")) == NULL) 
+        t = DAV_REDIRECTREF_NULL;
+    else if (dav_find_child(lifetime_elem, "temporary")) 
+        t = DAV_REDIRECTREF_TEMPORARY;
+    else if (dav_find_child(lifetime_elem, "permanent"))
+        t = DAV_REDIRECTREF_PERMANENT;
+    else
+        t = DAV_REDIRECTREF_INVALID;
+
+    return t;
+}
+
 static int dav_method_mkredirectref(dav_request *dav_r) 
 {
     request_rec *r = dav_r->request;
@@ -6650,19 +6668,23 @@ static int dav_method_mkredirectref(dav_request *dav_r)
         parse redirect-lifetime 
         precondition: redirect-lifetime-supported
     */
-    apr_xml_elem *lifetime_elem, *href_elem, *reftarget_elem;
+    apr_xml_elem *href_elem, *reftarget_elem;
+    t = parse_lifetime(doc->root);
 
-    if ((lifetime_elem = dav_find_child(doc->root, "redirect-lifetime")) == NULL) 
-        t = DAV_REDIRECTREF_TEMPORARY;
-    else if (dav_find_child(lifetime_elem, "temporary")) 
-        t = DAV_REDIRECTREF_TEMPORARY;
-    else if (dav_find_child(lifetime_elem, "permanent"))
-        t = DAV_REDIRECTREF_PERMANENT;
-    else {
+    if (t == DAV_REDIRECTREF_INVALID) {
         err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0,
                                 "redirect-lifetime supplied is not supported.",
                                 NULL, "redirect-lifetime-supported", NULL);
         return dav_handle_err(r, err, NULL);
+    }
+    
+    /* 
+        if the client does not specify a redirect-lifetime,
+        default to temporary.
+    */
+
+    if (t == DAV_REDIRECTREF_NULL) {
+        t = DAV_REDIRECTREF_TEMPORARY;
     }
 
     /* parse reftarget */
@@ -6671,7 +6693,7 @@ static int dav_method_mkredirectref(dav_request *dav_r)
     if ((reftarget_elem = dav_find_child(doc->root, "reftarget")) == NULL) 
         return HTTP_BAD_REQUEST;
 
-    if (href_elem = dav_find_child(reftarget_elem, "href")) {
+    if ((href_elem = dav_find_child(reftarget_elem, "href"))) {
         reftarget = dav_xml_get_cdata(href_elem, r->pool, 1);
         apr_uri_t *uptr;
         if ((result = apr_uri_parse(r->pool, reftarget, uptr)) == APR_SUCCESS)
@@ -6701,6 +6723,122 @@ static int dav_method_mkredirectref(dav_request *dav_r)
             return dav_handle_err(r, err, NULL);
 
     return dav_created(r, r->uri, "Redirect Reference", 0);
+}
+
+static int dav_is_allow_method_updateredirectref(
+    dav_request *dav_r, 
+    const dav_hooks_acl *acl_hook, 
+    const dav_principal *principal
+){
+    request_rec *r = dav_r->request;
+    int retVal = TRUE;
+    dav_resource *resource = NULL;
+    dav_error *err = NULL;
+    
+    err = dav_get_resource(r, 0 /* label_allowed */, 0 /* use_checked_in */,
+                           &resource);
+			   
+    if (err != NULL)
+        return retVal;
+			   
+    /* Set the resolved resource in context, so that it can be reused */
+    dav_r->resource = resource;
+
+    if (resource->exists && acl_hook != NULL) {
+	retVal = (*acl_hook->is_allow)(principal, resource, 
+                                       DAV_PERMISSION_WRITE_CONTENT);
+    }
+
+    return retVal;
+}
+
+static int dav_method_updateredirectref(dav_request *dav_r)
+{
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
+    dav_error *err;
+    const dav_hooks_redirect *redirect_hooks = dav_get_redirect_hooks(r);
+    apr_xml_doc *doc;
+    int result;
+
+    /* if there is no redirect provider, decline request */
+    if (redirect_hooks == NULL)
+        return DECLINED;
+
+    if (resource == NULL) {
+        err = dav_get_resource(r, 0 /* label_allowed */, 
+                               0 /* use_checked_in */, &resource);
+        if (err) 
+            return dav_handle_err(r, err, NULL);
+    }
+
+    /* precondition: must-be-redirectref */
+    if (resource->type != DAV_RESOURCE_TYPE_REDIRECTREF) {
+        err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0,
+                                "request-uri is not a redirect reference.",
+                                NULL, "must-be-redirectref", NULL);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    if ((result = ap_xml_parse_input(r, &doc)) != OK) {
+        return result;
+    }
+
+    if (doc == NULL || !dav_validate_root(doc, "updateredirectref")) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "The request body does"
+                      " not contain a \"mkredirectref\" element.");
+        return HTTP_BAD_REQUEST;
+    }
+
+    /* precondition: redirect-lifetime-supported */
+    dav_redirectref_lifetime t = parse_lifetime(doc->root);
+    if (t == DAV_REDIRECTREF_INVALID) {
+        err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0,
+                                "redirect-lifetime supplied is not supported.",
+                                NULL, "redirect-lifetime-supported", NULL);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* parse reftarget */
+    const char *reftarget;
+    apr_xml_elem *reftarget_elem, *href_elem;
+    int legal_reftarget = 1;
+
+    if ((reftarget_elem = dav_find_child(doc->root, "reftarget")) != NULL) { 
+        if ((href_elem = dav_find_child(reftarget_elem, "href"))) {
+            reftarget = dav_xml_get_cdata(href_elem, r->pool, 1);
+            apr_uri_t *uptr;
+            if ((result = apr_uri_parse(r->pool, reftarget, uptr)) != APR_SUCCESS)
+                legal_reftarget = 0;
+        }
+        else {
+            legal_reftarget = 0;
+        }
+    }
+
+    /* precondition: legal-reftarget */
+    if (!legal_reftarget) {
+        err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0, 
+                                "Illegal reftarget.", NULL, "legal-reftarget",
+                                NULL);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* update redirect reference */
+    if ((err = redirect_hooks->update_redirectref(resource, reftarget, t))) {
+        const dav_hooks_transaction *xaction_hooks = dav_get_transaction_hooks(r);
+        if (xaction_hooks && dav_r->trans) 
+            xaction_hooks->mode_set(dav_r->trans, DAV_TRANSACTION_ROLLBACK);
+
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
+    return HTTP_OK;
 }
 
 int dav_method_handle(dav_method *m, dav_request *dav_r)
@@ -7105,6 +7243,19 @@ static dav_method *make_mkredirectref_method(apr_pool_t *p)
     return retVal;
 }
 
+static dav_method *make_updateredirectref_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_updateredirectref;
+    retVal->is_allow = dav_is_allow_method_updateredirectref;
+
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
 static void dav_add_method(dav_all_methods *methods, int method_number, dav_method *m, apr_pool_t *p)
 {
     int *buf;
@@ -7151,21 +7302,29 @@ dav_all_methods *dav_all_methods_new(apr_pool_t *p)
     dav_methods[DAV_M_SEARCH] = ap_method_register(p, "SEARCH");
     dav_methods[DAV_M_ACL] = ap_method_register(p, "ACL");
     dav_methods[DAV_M_MKREDIRECTREF] = ap_method_register(p, "MKREDIRECTREF");
+    dav_methods[DAV_M_UPDATEREDIRECTREF] = 
+                            ap_method_register(p, "UPDATEREDIRECTREF");
     
 
     /* BIND method */
     dav_add_method( retVal, dav_methods[DAV_M_BIND], make_bind_method(p), p );
-    dav_add_method( retVal, dav_methods[DAV_M_UNBIND], make_unbind_method(p), p );
-    dav_add_method( retVal, dav_methods[DAV_M_REBIND], make_rebind_method(p), p );
+    dav_add_method( retVal, dav_methods[DAV_M_UNBIND], 
+                    make_unbind_method(p), p );
+    dav_add_method( retVal, dav_methods[DAV_M_REBIND], 
+                    make_rebind_method(p), p );
 
     /* DASL method */
-    dav_add_method( retVal, dav_methods[DAV_M_SEARCH], make_search_method(p), p );
+    dav_add_method( retVal, dav_methods[DAV_M_SEARCH], 
+                    make_search_method(p), p );
 
     /* ACL method */
     dav_add_method( retVal, dav_methods[DAV_M_ACL], make_acl_method(p), p );
 
-    /* REDIRECT method */
-    dav_add_method( retVal, dav_methods[DAV_M_MKREDIRECTREF], make_mkredirectref_method(p), p );
+    /* REDIRECT methods */
+    dav_add_method( retVal, dav_methods[DAV_M_MKREDIRECTREF], 
+                    make_mkredirectref_method(p), p );
+    dav_add_method( retVal, dav_methods[DAV_M_UPDATEREDIRECTREF], 
+                    make_updateredirectref_method(p), p );
 
     return retVal;
 }
@@ -7173,7 +7332,8 @@ dav_all_methods *dav_all_methods_new(apr_pool_t *p)
 dav_method *dav_get_method(dav_all_methods *methods, request_rec *r)
 {
     if (!methods) return NULL;
-    return (dav_method *)apr_hash_get(methods->method_hash, &(r->method_number), sizeof(r->method_number));
+    return (dav_method *)apr_hash_get(methods->method_hash, 
+                            &(r->method_number), sizeof(r->method_number));
 }
 
 static int dav_init_handler(apr_pool_t *p, apr_pool_t *plog, apr_pool_t *ptemp,
