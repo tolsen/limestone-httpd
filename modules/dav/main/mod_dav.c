@@ -155,6 +155,7 @@ enum {
     DAV_M_REBIND,
     DAV_M_SEARCH,
     DAV_M_ACL,
+    DAV_M_MKREDIRECTREF,
     DAV_M_LAST
 };
 static int dav_methods[DAV_M_LAST];
@@ -163,6 +164,7 @@ struct _dav_request {
     request_rec *request;
     dav_transaction *trans;
     dav_resource *resource;
+    dav_resource *parent_resource;
 };
 
 struct _dav_method {
@@ -318,6 +320,11 @@ DAV_DECLARE(const dav_hooks_acl *) dav_get_acl_hooks(request_rec *r)
 DAV_DECLARE(const dav_hooks_transaction *) dav_get_transaction_hooks(request_rec *r)
 {
     return dav_get_provider(r)->transaction;
+}
+
+DAV_DECLARE(const dav_hooks_redirect *) dav_get_redirect_hooks(request_rec *r)
+{
+    return dav_get_provider(r)->redirect;
 }
 
 static dav_error *dav_transaction_start(request_rec *r, dav_transaction **t)
@@ -1646,6 +1653,7 @@ static void dav_gen_supported_methods_table(request_rec *r,
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     const dav_hooks_binding *binding_hooks = DAV_GET_HOOKS_BINDING(r);
     const dav_hooks_search *search_hooks = DAV_GET_HOOKS_SEARCH(r);
+    const dav_hooks_redirect *redirect_hooks = dav_get_redirect_hooks(r);
     apr_table_t *methods = apr_table_make(r->pool, 12);
     *p_methods = methods;
 
@@ -1751,8 +1759,13 @@ static void dav_gen_supported_methods_table(request_rec *r,
         apr_table_addn(methods, "SEARCH", "");
     }
 
-    if (acl_hooks != NULL)
+    if (acl_hooks != NULL) {
         apr_table_addn(methods, "ACL", "");
+    }
+
+    if (redirect_hooks != NULL) {
+        apr_table_addn(methods, "MKREDIRECTREF", "");
+    }
 }
 
 /* generate DAV:supported-method-set OPTIONS response */
@@ -2376,6 +2389,7 @@ static int dav_method_options(dav_request *dav_r)
     const dav_hooks_vsn *vsn_hooks = DAV_GET_HOOKS_VSN(r);
     const dav_hooks_binding *binding_hooks = DAV_GET_HOOKS_BINDING(r);
     const dav_hooks_search *search_hooks = DAV_GET_HOOKS_SEARCH(r);
+    const dav_hooks_redirect *redirect_hooks = dav_get_redirect_hooks(r);
     dav_resource *resource = dav_r->resource;
     const char *dav_level;
     char *allow;
@@ -2418,14 +2432,17 @@ static int dav_method_options(dav_request *dav_r)
     dav_level = "1";
 
     if (locks_hooks != NULL) {
-        dav_level = "1,2";
+        dav_level = "1, 2";
     }
 
     if (binding_hooks != NULL)
-        dav_level = apr_pstrcat(r->pool, dav_level, ",bindings", NULL);
+        dav_level = apr_pstrcat(r->pool, dav_level, ", bindings", NULL);
 
     if (acl_hooks != NULL)
-        dav_level = apr_pstrcat(r->pool, dav_level, ",access-control", NULL);
+        dav_level = apr_pstrcat(r->pool, dav_level, ", access-control", NULL);
+
+    if (redirect_hooks != NULL)
+        dav_level = apr_pstrcat(r->pool, dav_level, ", redirectrefs", NULL);
 
     /* ###
      * MSFT Web Folders chokes if length of DAV header value > 63 characters!
@@ -3593,6 +3610,7 @@ static int dav_is_allow_method_mkcol(dav_request *dav_r,
         err = (*repos_hooks->get_parent_resource)(resource, &parent_resource);
 	
         if (err == NULL && parent_resource && parent_resource->exists ) {
+            dav_r->parent_resource = parent_resource;
 	    retVal = (*acl_hook->is_allow)(principal, parent_resource, 
                                            DAV_PERMISSION_BIND);
 
@@ -6578,6 +6596,113 @@ static int dav_method_bind(dav_request *dav_r)
     return dav_created(r, binding_rec->uri, "Binding", 0);
 }
 
+static int dav_method_mkredirectref(dav_request *dav_r) 
+{
+    request_rec *r = dav_r->request;
+    dav_resource *resource = dav_r->resource;
+    dav_resource *parent_resource = dav_r->parent_resource;
+    dav_error *err;
+    const dav_hooks_redirect *redirect_hooks = dav_get_redirect_hooks(r);
+    apr_xml_doc *doc;
+    int result;
+    dav_redirectref_lifetime t;
+    int legal_reftarget = 0;
+
+    /* if there is no redirect provider, decline request */
+    if (redirect_hooks == NULL)
+        return DECLINED;
+
+    if (resource == NULL) {
+        err = dav_get_resource(r, 0 /* label_allowed */, 
+                               0 /* use_checked_in */, &resource);
+        if (err) 
+            return dav_handle_err(r, err, NULL);
+    }
+    
+    /* precondition: resource-must-be-null */
+    if (resource->exists) {
+        err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0, 
+                                "A resource already exists at the request-uri",
+                                NULL, "resource-must-be-null", NULL);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* precondition: parent-resource-must-be-non-null */
+    if (parent_resource == NULL || !parent_resource->exists || 
+        !parent_resource->collection) {
+        err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0,
+                                "Parent collection does not exist.", NULL, 
+                                "parent-resource-must-be-non-null", NULL);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    if ((result = ap_xml_parse_input(r, &doc)) != OK) {
+        return result;
+    }
+
+    if (doc == NULL || !dav_validate_root(doc, "mkredirectref")) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "The request body does"
+                      " not contain a \"mkredirectref\" element.");
+        return HTTP_BAD_REQUEST;
+    }
+
+    /*  
+        parse redirect-lifetime 
+        precondition: redirect-lifetime-supported
+    */
+    apr_xml_elem *lifetime_elem, *href_elem, *reftarget_elem;
+
+    if ((lifetime_elem = dav_find_child(doc->root, "redirect-lifetime")) == NULL) 
+        t = DAV_REDIRECTREF_TEMPORARY;
+    else if (dav_find_child(lifetime_elem, "temporary")) 
+        t = DAV_REDIRECTREF_TEMPORARY;
+    else if (dav_find_child(lifetime_elem, "permanent"))
+        t = DAV_REDIRECTREF_PERMANENT;
+    else {
+        err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0,
+                                "redirect-lifetime supplied is not supported.",
+                                NULL, "redirect-lifetime-supported", NULL);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* parse reftarget */
+    const char *reftarget;
+
+    if ((reftarget_elem = dav_find_child(doc->root, "reftarget")) == NULL) 
+        return HTTP_BAD_REQUEST;
+
+    if (href_elem = dav_find_child(reftarget_elem, "href")) {
+        reftarget = dav_xml_get_cdata(href_elem, r->pool, 1);
+        apr_uri_t *uptr;
+        if ((result = apr_uri_parse(r->pool, reftarget, uptr)) == APR_SUCCESS)
+            legal_reftarget = 1;
+    }
+
+    /* precondition: legal-reftarget */
+    if (!legal_reftarget) {
+        err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0, 
+                                "Illegal reftarget.", NULL, "legal-reftarget",
+                                NULL);
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* create the redirect reference resource */
+    if ((err = redirect_hooks->create_redirectref(resource, reftarget, t))) {
+        const dav_hooks_transaction *xaction_hooks = dav_get_transaction_hooks(r);
+        if (xaction_hooks && dav_r->trans) 
+            xaction_hooks->mode_set(dav_r->trans, DAV_TRANSACTION_ROLLBACK);
+
+        return dav_handle_err(r, err, NULL);
+    }
+
+    /* end transaction here, if one was started */
+    if(dav_r->trans)
+        if((err = dav_transaction_end(r, dav_r->trans)))
+            return dav_handle_err(r, err, NULL);
+
+    return dav_created(r, r->uri, "Redirect Reference", 0);
+}
+
 int dav_method_handle(dav_method *m, dav_request *dav_r)
 {
     request_rec *r = dav_r->request;
@@ -6967,6 +7092,19 @@ static dav_method *make_acl_method(apr_pool_t *p)
     return retVal;
 }
 
+static dav_method *make_mkredirectref_method(apr_pool_t *p)
+{
+    dav_method *retVal;
+    retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
+    
+    retVal->handle = dav_method_mkredirectref;
+    retVal->is_allow = dav_is_allow_method_mkcol;
+
+    retVal->is_transactional = 1;
+    
+    return retVal;
+}
+
 static void dav_add_method(dav_all_methods *methods, int method_number, dav_method *m, apr_pool_t *p)
 {
     int *buf;
@@ -7012,6 +7150,7 @@ dav_all_methods *dav_all_methods_new(apr_pool_t *p)
     dav_methods[DAV_M_REBIND] = ap_method_register(p, "REBIND");
     dav_methods[DAV_M_SEARCH] = ap_method_register(p, "SEARCH");
     dav_methods[DAV_M_ACL] = ap_method_register(p, "ACL");
+    dav_methods[DAV_M_MKREDIRECTREF] = ap_method_register(p, "MKREDIRECTREF");
     
 
     /* BIND method */
@@ -7024,6 +7163,9 @@ dav_all_methods *dav_all_methods_new(apr_pool_t *p)
 
     /* ACL method */
     dav_add_method( retVal, dav_methods[DAV_M_ACL], make_acl_method(p), p );
+
+    /* REDIRECT method */
+    dav_add_method( retVal, dav_methods[DAV_M_MKREDIRECTREF], make_mkredirectref_method(p), p );
 
     return retVal;
 }

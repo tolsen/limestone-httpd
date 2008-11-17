@@ -251,6 +251,7 @@ typedef struct dav_hooks_binding dav_hooks_binding;
 typedef struct dav_hooks_search dav_hooks_search;
 typedef struct dav_hooks_acl dav_hooks_acl;
 typedef struct dav_hooks_transaction dav_hooks_transaction;
+typedef struct dav_hooks_redirect dav_hooks_redirect;
 
 /* ### deprecated name */
 typedef dav_hooks_propdb dav_hooks_db;
@@ -645,6 +646,7 @@ typedef struct {
     const dav_hooks_search *search;
     const dav_hooks_acl *acl;
     const dav_hooks_transaction *transaction;
+    const dav_hooks_redirect *redirect;
 
     void *ctx;
 } dav_provider;
@@ -2536,7 +2538,7 @@ struct dav_hooks_binding {
 struct dav_hooks_search {
     /* Set header for a OPTION method
      * An error may be returned.
-     * To set a hadder, this function might call
+     * To set a header, this function might call
      * apr_table_setn(r->headers_out, "DASL", dasl_optin1);
      *
      * Examples:
@@ -2837,6 +2839,23 @@ struct dav_hooks_transaction
 /* transaction states */
 #define DAV_TRANSACTION_STATE_STARTED   0x01
 #define DAV_TRANSACTION_STATE_ENDED     0x02
+
+/* --------------------------------------------------------------------
+**
+** REDIRECT HOOKS
+*/
+
+typedef enum {
+    DAV_REDIRECTREF_TEMPORARY,
+    DAV_REDIRECTREF_PERMANENT
+} dav_redirectref_lifetime;
+
+struct dav_hooks_redirect {
+    /* Create a redirect reference resource */
+    dav_error * (*create_redirectref)(dav_resource *resource, 
+                                      const char *reftarget,
+                                      dav_redirectref_lifetime t);
+};
 
 /* --------------------------------------------------------------------
 **
