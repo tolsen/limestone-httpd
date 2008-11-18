@@ -2864,6 +2864,11 @@ struct dav_hooks_redirect {
     dav_error * (*update_redirectref)(dav_resource *resource, 
                                       const char *reftarget,
                                       dav_redirectref_lifetime t);
+    /**
+    * If a provider needs a context to associate with this hook structure,
+    * then this field is to be used. In most cases, it will just be NULL.
+    */
+    void *ctx;
 };
 
 /* --------------------------------------------------------------------
