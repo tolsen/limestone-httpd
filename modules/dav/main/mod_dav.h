@@ -1087,6 +1087,10 @@ enum {
     /* SEARCH properties */
     DAV_PROPID_supported_query_grammar_set,
 
+    /* Redirect properties */
+    DAV_PROPID_redirect_lifetime,
+    DAV_PROPID_reftarget,
+
     DAV_PROPID_END
 };
 
