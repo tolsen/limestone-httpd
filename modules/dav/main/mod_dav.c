@@ -7010,7 +7010,8 @@ static int dav_init_handler(apr_pool_t *p, apr_pool_t *plog, apr_pool_t *ptemp,
 static int dav_dispatch_method(request_rec *r)
 {
     dav_method *method;
-    const dav_hooks_acl *acl_hooks;
+    const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(r);
+    const dav_hooks_redirect *redirect_hooks = dav_get_redirect_hooks(r);
     const dav_principal *principal;
     int is_allow = TRUE;
     dav_resource *resource;
@@ -7031,9 +7032,28 @@ static int dav_dispatch_method(request_rec *r)
     if (err) return dav_handle_err(r, err, NULL);
 
     dav_r->resource = resource;
-    acl_hooks = dav_get_acl_hooks(r);
+
+    const char *apply_to_redirectref;
+    if (redirect_hooks && resource->type == DAV_RESOURCE_TYPE_REDIRECTREF) {
+        apply_to_redirectref = apr_table_get(r->headers_in, 
+                                             "Apply-To-Redirect-Ref");
+
+        if (!apply_to_redirectref || apply_to_redirectref[0] != 'T') {
+            const char *reftarget = redirect_hooks->get_reftarget(resource);
+            dav_redirectref_lifetime t = redirect_hooks->get_lifetime(resource);
+            /* set the redirect headers */
+            apr_table_set(r->headers_out, "Location", reftarget);
+            apr_table_set(r->headers_out, "Redirect-Ref", reftarget);
+
+            if (t != DAV_REDIRECTREF_TEMPORARY) {
+                return HTTP_MOVED_PERMANENTLY;
+            }
+
+            return HTTP_MOVED_TEMPORARILY;
+        }
+    }
   
-    if ( acl_hooks )
+    if (acl_hooks)
     {
         principal = dav_principal_make_from_request(r);
         /* Bypassing acl's for PUT user (creating a new user) 
