@@ -97,6 +97,9 @@ static dav_prop_insert dav_core_insert_prop(const dav_resource *resource,
         case DAV_RESOURCE_TYPE_PRINCIPAL:
             value = "<D:principal/>";
             break;
+        case DAV_RESOURCE_TYPE_REDIRECTREF:
+            value = "<D:redirectref/>";
+            break;
 
         default:
             /* ### bad juju */
