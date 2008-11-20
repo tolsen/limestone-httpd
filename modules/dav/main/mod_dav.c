@@ -166,6 +166,7 @@ struct _dav_request {
     dav_transaction *trans;
     dav_resource *resource;
     dav_resource *parent_resource;
+    int apply_to_redirectref;
 };
 
 struct _dav_method {
@@ -1050,6 +1051,15 @@ static int dav_method_get(dav_request *dav_r)
     dav_resource *resource = dav_r->resource;
     int retVal;
     dav_error *err = NULL;
+    
+    /* RFC 4437, Section 5:
+        As redirect references do not have body,
+        GET and PUT requests with Apply-To-Redirect-Ref: "T" must fail,
+        with status 403
+    */
+    if (dav_r->apply_to_redirectref) {
+        return HTTP_FORBIDDEN;
+    }
 
     /* look for QUERY_ARGS that have been extracted from the request 
      * and handle them appropriately */
@@ -1152,6 +1162,15 @@ static int dav_method_put(dav_request *dav_r)
     int has_range;
     apr_off_t range_start;
     apr_off_t range_end;
+
+    /* RFC 4437, Section 5:
+        As redirect references do not have body,
+        GET and PUT requests with Apply-To-Redirect-Ref: "T" must fail,
+        with status 403
+    */
+    if (dav_r->apply_to_redirectref) {
+        return HTTP_FORBIDDEN;
+    }
 
     /* If not a file or collection resource, PUT not allowed */
     if (resource->type != DAV_RESOURCE_TYPE_REGULAR
@@ -7032,6 +7051,7 @@ static int dav_dispatch_method(request_rec *r)
     if (err) return dav_handle_err(r, err, NULL);
 
     dav_r->resource = resource;
+    dav_r->apply_to_redirectref = 0;
 
     const char *apply_to_redirectref;
     if (redirect_hooks && resource->type == DAV_RESOURCE_TYPE_REDIRECTREF) {
@@ -7050,6 +7070,9 @@ static int dav_dispatch_method(request_rec *r)
             }
 
             return HTTP_MOVED_TEMPORARILY;
+        }
+        else {
+            dav_r->apply_to_redirectref = 1;
         }
     }
   
