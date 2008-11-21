@@ -2543,6 +2543,7 @@ static dav_error * dav_propfind_walker(dav_walk_resource *wres, int calltype)
     dav_get_props_result propstats = { 0 };
     request_rec *r = ctx->r;
     const dav_hooks_acl *acl_hooks = dav_get_acl_hooks(r);
+    const dav_hooks_redirect *redirect_hooks = dav_get_redirect_hooks(r);
     const dav_principal *principal = dav_principal_make_from_request(r);
     const char *status_forbidden;
     apr_text_header hdr = { 0 };
@@ -2632,6 +2633,31 @@ static dav_error * dav_propfind_walker(dav_walk_resource *wres, int calltype)
                                            ap_get_status_line(dav_get_permission_denied_status(r)));
         }
     }
+    else if(redirect_hooks && 
+            wres->resource->type == DAV_RESOURCE_TYPE_REDIRECTREF &&
+            !ctx->apply_to_redirectref) {
+        const char *reftarget = redirect_hooks->get_reftarget(wres->resource);
+        dav_redirectref_lifetime t = 
+                                redirect_hooks->get_lifetime(wres->resource);
+        int status = HTTP_MOVED_TEMPORARILY;
+
+        if (t != DAV_REDIRECTREF_TEMPORARY) {
+            status = HTTP_MOVED_PERMANENTLY;
+        }
+        
+        /* send a 3xx status */
+        apr_text_append(r->pool, &hdr, "<D:status>HTTP/1.1 %s</D:status>"
+                        DEBUG_CR, ap_get_status_line(status));
+
+        /* append a DAV:location */
+        apr_text_append(r->pool, &hdr, 
+                        "<D:location>" DEBUG_CR 
+                        "  <D:href>%s</D:href>" DEBUG_CR 
+                        "</D:location>" DEBUG_CR,
+                        reftarget);
+        propstats.propstats = hdr.first;
+        propstats.xmlns = NULL;
+    }
     else {
 
         if (ctx->propfind_type == DAV_PROPFIND_IS_PROP) {
@@ -2668,6 +2694,14 @@ static dav_error * dav_propfind_walker(dav_walk_resource *wres, int calltype)
     apr_pool_clear(ctx->scratchpool);
 
     return NULL;
+}
+
+static int apply_to_redirectref(request_rec *r)
+{
+    const char *apply_to_redirectref = apr_table_get(r->headers_in,
+                                                     "Apply-To-Redirect-Ref");
+
+    return (apply_to_redirectref && apply_to_redirectref[0] == 'T');
 }
 
 /* handle the PROPFIND method */
@@ -2753,6 +2787,7 @@ static int dav_method_propfind(dav_request *dav_r)
     ctx.w.pool = r->pool;
     ctx.w.root = resource;
 
+    ctx.apply_to_redirectref = apply_to_redirectref(r);
     ctx.doc = doc;
     ctx.r = r;
     ctx.bb = apr_brigade_create(r->pool, r->connection->bucket_alloc);
@@ -7051,29 +7086,22 @@ static int dav_dispatch_method(request_rec *r)
     if (err) return dav_handle_err(r, err, NULL);
 
     dav_r->resource = resource;
-    dav_r->apply_to_redirectref = 0;
+    dav_r->apply_to_redirectref = apply_to_redirectref(r);
 
-    const char *apply_to_redirectref;
-    if (redirect_hooks && resource->type == DAV_RESOURCE_TYPE_REDIRECTREF) {
-        apply_to_redirectref = apr_table_get(r->headers_in, 
-                                             "Apply-To-Redirect-Ref");
+    if (redirect_hooks && 
+        resource->type == DAV_RESOURCE_TYPE_REDIRECTREF &&
+        !dav_r->apply_to_redirectref) {
+        const char *reftarget = redirect_hooks->get_reftarget(resource);
+        dav_redirectref_lifetime t = redirect_hooks->get_lifetime(resource);
+        /* set the redirect headers */
+        apr_table_set(r->headers_out, "Location", reftarget);
+        apr_table_set(r->headers_out, "Redirect-Ref", reftarget);
 
-        if (!apply_to_redirectref || apply_to_redirectref[0] != 'T') {
-            const char *reftarget = redirect_hooks->get_reftarget(resource);
-            dav_redirectref_lifetime t = redirect_hooks->get_lifetime(resource);
-            /* set the redirect headers */
-            apr_table_set(r->headers_out, "Location", reftarget);
-            apr_table_set(r->headers_out, "Redirect-Ref", reftarget);
-
-            if (t != DAV_REDIRECTREF_TEMPORARY) {
-                return HTTP_MOVED_PERMANENTLY;
-            }
-
-            return HTTP_MOVED_TEMPORARILY;
+        if (t != DAV_REDIRECTREF_TEMPORARY) {
+            return HTTP_MOVED_PERMANENTLY;
         }
-        else {
-            dav_r->apply_to_redirectref = 1;
-        }
+
+        return HTTP_MOVED_TEMPORARILY;
     }
   
     if (acl_hooks)

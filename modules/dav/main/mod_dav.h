@@ -1813,6 +1813,8 @@ typedef struct dav_walker_ctx
 
     dav_buffer work_buf;            /* for dav_validate_request() */
 
+    int apply_to_redirectref        /* Apply-To-Redirect-Ref header */
+
 } dav_walker_ctx;
 
 DAV_DECLARE(void) dav_add_response(dav_walk_resource *wres,
