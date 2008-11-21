@@ -2636,25 +2636,31 @@ static dav_error * dav_propfind_walker(dav_walk_resource *wres, int calltype)
     else if(redirect_hooks && 
             wres->resource->type == DAV_RESOURCE_TYPE_REDIRECTREF &&
             !ctx->apply_to_redirectref) {
-        const char *reftarget = redirect_hooks->get_reftarget(wres->resource);
-        dav_redirectref_lifetime t = 
-                                redirect_hooks->get_lifetime(wres->resource);
+        dav_resource *resource = (dav_resource *)wres->resource;
+        const char *reftarget = redirect_hooks->get_reftarget(resource);
+        dav_redirectref_lifetime t = redirect_hooks->get_lifetime(resource);
         int status = HTTP_MOVED_TEMPORARILY;
 
         if (t != DAV_REDIRECTREF_TEMPORARY) {
             status = HTTP_MOVED_PERMANENTLY;
         }
-        
-        /* send a 3xx status */
-        apr_text_append(r->pool, &hdr, "<D:status>HTTP/1.1 %s</D:status>"
-                        DEBUG_CR, ap_get_status_line(status));
+       
+        const char *stat = apr_psprintf(r->pool, 
+                                          "<D:status>HTTP/1.1 %s</D:status>"
+                                          DEBUG_CR, ap_get_status_line(status));
+
+        const char *location = apr_psprintf(r->pool,
+                                            "<D:location>" DEBUG_CR 
+                                            "  <D:href>%s</D:href>" DEBUG_CR 
+                                            "</D:location>" DEBUG_CR,
+                                            reftarget);
+
+        /* add a 3xx status */
+        apr_text_append(r->pool, &hdr, stat);
 
         /* append a DAV:location */
-        apr_text_append(r->pool, &hdr, 
-                        "<D:location>" DEBUG_CR 
-                        "  <D:href>%s</D:href>" DEBUG_CR 
-                        "</D:location>" DEBUG_CR,
-                        reftarget);
+        apr_text_append(r->pool, &hdr, location);
+
         propstats.propstats = hdr.first;
         propstats.xmlns = NULL;
     }
