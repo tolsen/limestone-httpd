@@ -348,7 +348,7 @@ static dav_error *dav_transaction_start(request_rec *r, dav_transaction **t)
 
 static dav_error *dav_transaction_end(request_rec *r, dav_transaction *t)
 {
-    const dav_hooks_transaction *transaction_hooks = DAV_GET_HOOKS_TRANSACTION(r);
+    const dav_hooks_transaction *transaction_hooks = dav_get_transaction_hooks(r);
     dav_error *err = NULL;
 
     if(t && t->state == DAV_TRANSACTION_STATE_STARTED) {
@@ -6322,6 +6322,7 @@ static int dav_method_mkredirectref(dav_request *dav_r)
     dav_resource *parent_resource = dav_r->parent_resource;
     dav_error *err;
     const dav_hooks_redirect *redirect_hooks = dav_get_redirect_hooks(r);
+    const dav_hooks_transaction *xaction_hooks = dav_get_transaction_hooks(r);
     apr_xml_doc *doc;
     int result;
     dav_redirectref_lifetime t;
@@ -6389,8 +6390,8 @@ static int dav_method_mkredirectref(dav_request *dav_r)
 
     if ((href_elem = dav_find_child(reftarget_elem, "href"))) {
         reftarget = dav_xml_get_cdata(href_elem, r->pool, 1);
-        apr_uri_t *uptr;
-        if ((result = apr_uri_parse(r->pool, reftarget, uptr)) == APR_SUCCESS)
+        apr_uri_t uptr;
+        if ((result = apr_uri_parse(r->pool, reftarget, &uptr)) == APR_SUCCESS)
             legal_reftarget = 1;
     }
 
@@ -6404,7 +6405,6 @@ static int dav_method_mkredirectref(dav_request *dav_r)
 
     /* create the redirect reference resource */
     if ((err = redirect_hooks->create_redirectref(resource, reftarget, t))) {
-        const dav_hooks_transaction *xaction_hooks = dav_get_transaction_hooks(r);
         if (xaction_hooks && dav_r->trans) 
             xaction_hooks->mode_set(dav_r->trans, DAV_TRANSACTION_ROLLBACK);
 
@@ -7100,8 +7100,8 @@ static int dav_dispatch_method(request_rec *r)
         const char *reftarget = redirect_hooks->get_reftarget(resource);
         dav_redirectref_lifetime t = redirect_hooks->get_lifetime(resource);
         /* set the redirect headers */
-        apr_table_set(r->headers_out, "Location", reftarget);
-        apr_table_set(r->headers_out, "Redirect-Ref", reftarget);
+        apr_table_set(r->err_headers_out, "Location", reftarget);
+        apr_table_set(r->err_headers_out, "Redirect-Ref", reftarget);
 
         if (t != DAV_REDIRECTREF_TEMPORARY) {
             return HTTP_MOVED_PERMANENTLY;

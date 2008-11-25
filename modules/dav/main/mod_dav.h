@@ -707,6 +707,7 @@ DAV_DECLARE(const dav_hooks_vsn *) dav_get_vsn_hooks(request_rec *r);
 DAV_DECLARE(const dav_hooks_binding *) dav_get_binding_hooks(request_rec *r);
 DAV_DECLARE(const dav_hooks_search *) dav_get_search_hooks(request_rec *r);
 DAV_DECLARE(const dav_hooks_acl *)dav_get_acl_hooks(request_rec *r);
+DAV_DECLARE(const dav_hooks_redirect *)dav_get_redirect_hooks(request_rec *r);
 
 DAV_DECLARE(void) dav_register_provider(apr_pool_t *p, const char *name,
                                         const dav_provider *hooks);
