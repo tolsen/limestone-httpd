@@ -6483,8 +6483,8 @@ static int dav_method_updateredirectref(dav_request *dav_r)
     if ((reftarget_elem = dav_find_child(doc->root, "reftarget")) != NULL) { 
         if ((href_elem = dav_find_child(reftarget_elem, "href"))) {
             reftarget = dav_xml_get_cdata(href_elem, r->pool, 1);
-            apr_uri_t *uptr;
-            if ((result = apr_uri_parse(r->pool, reftarget, uptr)) != APR_SUCCESS)
+            apr_uri_t uptr;
+            if ((result = apr_uri_parse(r->pool, reftarget, &uptr)) != APR_SUCCESS)
                 legal_reftarget = 0;
         }
         else {
