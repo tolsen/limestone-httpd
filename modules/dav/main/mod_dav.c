@@ -5183,14 +5183,6 @@ static int dav_method_report(dav_request *dav_r)
     return DONE;
 }
 
-static int dav_is_allow_method_report(dav_request *dav_r, 
-                                      const dav_hooks_acl *acl_hook, 
-                                      const dav_principal *principal)
-{
-    /* ### fix it later */
-    return TRUE;
-}
-
 static int dav_method_make_workspace(dav_request *dav_r)
 {
     request_rec *r = dav_r->request;
@@ -6818,7 +6810,7 @@ static dav_method *make_report_method(apr_pool_t *p)
     retVal = (dav_method *)apr_pcalloc(p, sizeof(*retVal));
     
     retVal->handle = dav_method_report;
-    retVal->is_allow = dav_is_allow_method_report;
+    retVal->is_allow = dav_is_allow_method_get;
     retVal->label_allowed = 0;  /** TODO: investigate this */
     retVal->use_checked_in = 0;
     
