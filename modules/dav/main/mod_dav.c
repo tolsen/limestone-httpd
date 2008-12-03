@@ -4192,7 +4192,8 @@ static int dav_method_lock(dav_request *dav_r)
         if((err = dav_transaction_end(r, dav_r->trans)))
             return dav_handle_err(r, err, NULL);
 
-    r->status = (resource_state != DAV_RESOURCE_NULL? HTTP_OK : HTTP_CREATED);
+    r->status = (resource_state == DAV_RESOURCE_NULL && resource->exists) ?
+      HTTP_CREATED : HTTP_OK;
     ap_set_content_type(r, DAV_XML_CONTENT_TYPE);
 
     ap_rputs(DAV_XML_HEADER DEBUG_CR "<D:prop xmlns:D=\"DAV:\">" DEBUG_CR, r);
