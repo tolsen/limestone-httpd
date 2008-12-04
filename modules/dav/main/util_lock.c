@@ -755,8 +755,15 @@ DAV_DECLARE(int) dav_get_resource_state(request_rec *r,
             return DAV_RESOURCE_ERROR;
         }
 
-        if (locks_present)
-            return DAV_RESOURCE_LOCK_NULL;
+        if (locks_present) {
+            /* get the locks to check that has_locks found unexpired locks */
+            dav_lock *locks = NULL;
+            err = (*hooks->get_locks)(lockdb, resource, DAV_GETLOCKS_PARTIAL,
+                                      &locks);
+            if (locks)
+                return DAV_RESOURCE_LOCK_NULL;
+
+        }
     }
 
     return DAV_RESOURCE_NULL;
