@@ -699,6 +699,14 @@ int ap_proxy_http_request(apr_pool_t *p, request_rec *r,
     if (apr_table_get(r->subprocess_env, "force-proxy-request-1.0")) {
         buf = apr_pstrcat(p, r->method, " ", url, " HTTP/1.0" CRLF, NULL);
         force10 = 1;
+        /*
+         * According to RFC 2616 8.2.3 we are not allowed to forward an
+         * Expect: 100-continue to an HTTP/1.0 server. Instead we MUST return
+         * a HTTP_EXPECTATION_FAILED
+         */
+        if (r->expecting_100) {
+            return HTTP_EXPECTATION_FAILED;
+        }
         p_conn->close++;
     } else {
         buf = apr_pstrcat(p, r->method, " ", url, " HTTP/1.1" CRLF, NULL);
@@ -1367,6 +1375,10 @@ apr_status_t ap_proxy_http_process_response(apr_pool_t * p, request_rec *r,
             ap_log_rerror(APLOG_MARK, APLOG_ERR, rc, r,
                           "proxy: error reading status line from remote "
                           "server %s", backend->hostname);
+            if (rc == APR_TIMEUP) {
+                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                              "proxy: read timeout");
+            }
             /*
              * If we are a reverse proxy request shutdown the connection
              * WITHOUT ANY response to trigger a retry by the client
@@ -1374,9 +1386,12 @@ apr_status_t ap_proxy_http_process_response(apr_pool_t * p, request_rec *r,
              * BUT currently we should not do this if the request is the
              * first request on a keepalive connection as browsers like
              * seamonkey only display an empty page in this case and do
-             * not do a retry.
+             * not do a retry. We should also not do this on a
+             * connection which times out; instead handle as
+             * we normally would handle timeouts
              */
-            if (r->proxyreq == PROXYREQ_REVERSE && c->keepalives) {
+            if (r->proxyreq == PROXYREQ_REVERSE && c->keepalives &&
+                rc != APR_TIMEUP) {
                 apr_bucket *eos;
 
                 ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
@@ -1919,6 +1934,19 @@ static int proxy_http_handler(request_rec *r, proxy_worker *worker,
     backend->is_ssl = is_ssl;
     if (is_ssl) {
         ap_proxy_ssl_connection_cleanup(backend, r);
+    }
+
+    /*
+     * In the case that we are handling a reverse proxy connection and this
+     * is not a request that is coming over an already kept alive connection
+     * with the client, do NOT reuse the connection to the backend, because
+     * we cannot forward a failure to the client in this case as the client
+     * does NOT expects this in this situation.
+     * Yes, this creates a performance penalty.
+     */
+    if ((r->proxyreq == PROXYREQ_REVERSE) && (!c->keepalives)
+        && (apr_table_get(r->subprocess_env, "proxy-initial-not-pooled"))) {
+        backend->close = 1;
     }
 
     /* Step One: Determine Who To Connect To */

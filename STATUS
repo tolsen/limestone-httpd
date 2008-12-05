@@ -1,5 +1,5 @@
 APACHE 2.2 STATUS:                                              -*-text-*-
-Last modified at [$Date: 2008-06-10 14:49:19 -0400 (Tue, 10 Jun 2008) $]
+Last modified at [$Date: 2008-10-07 11:20:24 -0400 (Tue, 07 Oct 2008) $]
 
 The current version of this file can be found at:
 
@@ -26,7 +26,8 @@ Release history:
     [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
           while x.{even}.z versions are Stable/GA releases.]
 
-    2.2.9   : Tagged June 10, 2008.
+    2.2.10  : Tagged October 7, 2008.
+    2.2.9   : Released June 14, 2008.
     2.2.8   : Released January 19, 2008.
     2.2.7   : Tagged January 4, 2008. Not released.
     2.2.6   : Released September 7, 2007.
@@ -83,6 +84,7 @@ RELEASE SHOWSTOPPERS:
 PATCHES ACCEPTED TO BACKPORT FROM TRUNK:
   [ start all new proposals below, under PATCHES PROPOSED. ]
 
+
 PATCHES PROPOSED TO BACKPORT FROM TRUNK:
   [ New proposals should be added at the end of the list ]
 
@@ -104,40 +106,47 @@ PATCHES PROPOSED TO BACKPORT FROM TRUNK:
       -1: rpluem: jorton found some problems with the trunk version and they
                   should be fixed / discussed in trunk before we backport.
 
- * Support chroot on unix-family platforms
-   PR 43596
-   http://svn.apache.org/viewvc?rev=611483&view=rev (source)
-   http://svn.apache.org/viewvc?rev=639005&view=rev (docs)
-   http://svn.apache.org/viewvc?rev=639010&view=rev (mmn)
-   +1: niq
-   rpluem says: I am missing a minor bump and documentation.
-   niq replies: Done.
-   rpluem says: Thanks. Sorry for being picky, but after revisiting the patch
-   again I ask myself how we can be sure that the chroot function is actually
-   present on the platform we compile.
-
- * mod_rewrite: Allow Cookie option to set secure and HttpOnly flags.
-   PR 44799
-   Trunk version of patch:
-         http://svn.apache.org/viewvc?rev=647395&view=rev
-         http://svn.apache.org/viewvc?rev=660461&view=rev
-         http://svn.apache.org/viewvc?rev=660566&view=rev
-         http://svn.apache.org/viewvc?rev=664330&view=rev
-   Backport version for 2.2.x of patch:
-         Trunk version of patch works
-   +1: rpluem,
-   -1: niq - strcasecmp(NULL, ...) when secure is not set
-   rpluem: Good catch. Should be fixed by r660461.
-
- * mod_proxy_http: Do not forward an Expect: 100-continue to
-   an HTTP/1.0 server
-   Trunk version of patch:
-         http://svn.apache.org/viewvc?view=rev&revision=661506
-   Backport version for 2.2.x of patch:
-         Trunk version of patch works
-   +1: jim
-
 PATCHES/ISSUES THAT ARE STALLED
+
+ * core, authn/z: Avoid calling access control hooks for internal requests
+   with configurations which match those of initial request.  Revert to
+   original behaviour (call access control hooks for internal requests
+   with URIs different from initial request) if any access control hooks or
+   providers are not registered as permitting this optimization.
+   Introduce wrappers for access control hook and provider registration
+   which can accept additional mode and flag data.  Convert common
+   provider version strings to macros.
+   The core purpose of this pile of patches is to avoid unnecessary
+   authn/z hooks when a single request spawns large numbers of internal
+   requests to which an identical set of httpd configurations apply.
+   This permits modules such as mod_authn_dbd and mod_dav to work together
+   acceptably.
+   Because certain external modules such as mod_authz_svn rely on the old
+   behaviour, this optimization can be made only when all authn/z hooks and
+   providers are registered with the appropriate flag.
+   It would be excellent if Windows and NetWare people could ensure this
+   builds correctly.
+   In particular, mod_auth.h must be included into request.c and I've left
+   mod_auth.h under modules/aaa rather than try to replicate wrowe's work
+   in trunk moving all the include files around.
+   I'm open to suggestions that this remain in trunk only, but in that case,
+   it would be very helpful to know whether most people expect a 2.4 branch
+   or just a 3.0 branch to be next.  If 3.0, some of the backwards
+   compatibility work could potentially be ditched.
+   Trunk version of patches:
+     http://svn.apache.org/viewvc?view=rev&revision=644525
+     http://svn.apache.org/viewvc?view=rev&revision=644562 (trunk MMN bump)
+     http://svn.apache.org/viewvc?view=rev&revision=645395
+     http://svn.apache.org/viewvc?view=rev&revision=645472
+     http://svn.apache.org/viewvc?view=rev&revision=645540
+     http://svn.apache.org/viewvc?view=rev&revision=646445 (reverted by r659160)
+     http://svn.apache.org/viewvc?view=rev&revision=658046
+     http://svn.apache.org/viewvc?view=rev&revision=659160
+   Backport version for 2.2.x of patch:
+     http://people.apache.org/~chrisd/patches/walk_cache/walk_cache-2.2.x.patch
+   +1: chrisd
+   -0: jim (would prefer to see in 2.4, and to push 2.4 out)
+
 
    * beos MPM: Create pmain pool and run modules' child_init hooks when
      entering ap_mpm_run(), then destroy pmain when exiting ap_mpm_run().

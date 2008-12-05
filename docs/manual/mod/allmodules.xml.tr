@@ -4,7 +4,7 @@
 <modulefilelist>
   <modulefile>core.xml.tr</modulefile>
   <modulefile>mod_actions.xml</modulefile>
-  <modulefile>mod_alias.xml</modulefile>
+  <modulefile>mod_alias.xml.tr</modulefile>
   <modulefile>mod_asis.xml</modulefile>
   <modulefile>mod_auth_basic.xml</modulefile>
   <modulefile>mod_auth_digest.xml</modulefile>
@@ -21,7 +21,7 @@
   <modulefile>mod_authz_host.xml</modulefile>
   <modulefile>mod_authz_owner.xml</modulefile>
   <modulefile>mod_authz_user.xml</modulefile>
-  <modulefile>mod_autoindex.xml</modulefile>
+  <modulefile>mod_autoindex.xml.tr</modulefile>
   <modulefile>mod_cache.xml</modulefile>
   <modulefile>mod_cern_meta.xml</modulefile>
   <modulefile>mod_cgi.xml</modulefile>
@@ -32,11 +32,11 @@
   <modulefile>mod_dav_lock.xml</modulefile>
   <modulefile>mod_dbd.xml</modulefile>
   <modulefile>mod_deflate.xml</modulefile>
-  <modulefile>mod_dir.xml</modulefile>
+  <modulefile>mod_dir.xml.tr</modulefile>
   <modulefile>mod_disk_cache.xml</modulefile>
   <modulefile>mod_dumpio.xml</modulefile>
   <modulefile>mod_echo.xml</modulefile>
-  <modulefile>mod_env.xml</modulefile>
+  <modulefile>mod_env.xml.tr</modulefile>
   <modulefile>mod_example.xml</modulefile>
   <modulefile>mod_expires.xml</modulefile>
   <modulefile>mod_ext_filter.xml</modulefile>
@@ -49,9 +49,9 @@
   <modulefile>mod_info.xml</modulefile>
   <modulefile>mod_isapi.xml</modulefile>
   <modulefile>mod_ldap.xml</modulefile>
-  <modulefile>mod_log_config.xml</modulefile>
-  <modulefile>mod_log_forensic.xml</modulefile>
-  <modulefile>mod_logio.xml</modulefile>
+  <modulefile>mod_log_config.xml.tr</modulefile>
+  <modulefile>mod_log_forensic.xml.tr</modulefile>
+  <modulefile>mod_logio.xml.tr</modulefile>
   <modulefile>mod_mem_cache.xml</modulefile>
   <modulefile>mod_mime.xml</modulefile>
   <modulefile>mod_mime_magic.xml</modulefile>
@@ -64,18 +64,18 @@
   <modulefile>mod_proxy_ftp.xml</modulefile>
   <modulefile>mod_proxy_http.xml</modulefile>
   <modulefile>mod_rewrite.xml</modulefile>
-  <modulefile>mod_setenvif.xml</modulefile>
-  <modulefile>mod_so.xml</modulefile>
+  <modulefile>mod_setenvif.xml.tr</modulefile>
+  <modulefile>mod_so.xml.tr</modulefile>
   <modulefile>mod_speling.xml</modulefile>
   <modulefile>mod_ssl.xml</modulefile>
-  <modulefile>mod_status.xml</modulefile>
+  <modulefile>mod_status.xml.tr</modulefile>
   <modulefile>mod_substitute.xml</modulefile>
   <modulefile>mod_suexec.xml</modulefile>
   <modulefile>mod_unique_id.xml</modulefile>
   <modulefile>mod_userdir.xml</modulefile>
   <modulefile>mod_usertrack.xml</modulefile>
   <modulefile>mod_version.xml</modulefile>
-  <modulefile>mod_vhost_alias.xml</modulefile>
+  <modulefile>mod_vhost_alias.xml.tr</modulefile>
   <modulefile>beos.xml</modulefile>
   <modulefile>mpm_common.xml.tr</modulefile>
   <modulefile>event.xml</modulefile>
