@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.ja.xsl"?>
-<!-- English Revision: 421100 -->
+<!-- English Revision: 669475 -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -26,7 +26,7 @@
 <description><code>CONNECT</code> リクエストを扱う
 <module>mod_proxy</module> 用の拡張</description>
 <status>Extension</status>
-<sourcefile>proxy_connect.c</sourcefile>
+<sourcefile>mod_proxy_connect.c</sourcefile>
 <identifier>proxy_connect_module</identifier>
 
 <summary>

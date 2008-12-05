@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "./style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="./style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 655872 $ -->
+<!-- $LastChangedRevision: 675627 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -663,15 +663,6 @@ factors to 5 decimal places before choosing the best variant.</p>
     negotiation dimensions, set the <code>force-no-vary</code> <a
     href="env.html#special">environment variable</a>.</p>
 
-</section>
-
-<section id="more"><title>More Information</title>
-
-    <p>For more information about content negotiation, see Alan
-    J. Flavell's <a
-    href="http://ppewww.ph.gla.ac.uk/~flavell/www/lang-neg.html">Language
-    Negotiation Notes</a>.  But note that this document may not be
-    updated to include changes in Apache 2.0.</p>
 </section>
 
 </manualpage>

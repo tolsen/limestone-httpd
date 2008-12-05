@@ -355,6 +355,8 @@ struct proxy_worker {
     char            retry_set;
     char            disablereuse;
     char            disablereuse_set;
+    apr_interval_time_t conn_timeout;
+    char            conn_timeout_set;
 };
 
 /*
@@ -382,6 +384,7 @@ struct proxy_balancer {
     apr_thread_mutex_t  *mutex;  /* Thread lock for updating lb params */
 #endif
     void            *context;   /* general purpose storage */
+    int             scolonsep;  /* true if ';' seps sticky session paths */
 };
 
 struct proxy_balancer_method {

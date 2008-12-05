@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.ja.xsl"?>
-<!-- English Revision: 153116:663981 (outdated) -->
+<!-- English Revision: 153116:696752 (outdated) -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -25,7 +25,7 @@
 <name>mod_proxy_balancer</name>
 <description>負荷分散のための <module>mod_proxy</module> 拡張</description>
 <status>Extension</status>
-<sourcefile>proxy_balancer.c</sourcefile>
+<sourcefile>mod_proxy_balancer.c</sourcefile>
 <identifier>proxy_balancer_module</identifier>
 <compatibility>2.1 以降</compatibility>
 

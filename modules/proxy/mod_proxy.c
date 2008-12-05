@@ -92,7 +92,7 @@ static const char *set_worker_param(apr_pool_t *p,
     }
     else if (!strcasecmp(key, "ttl")) {
         /* Time in seconds that will destroy all the connections
-         * that exced the smax
+         * that exceed the smax
          */
         ival = atoi(val);
         if (ival < 1)
@@ -275,6 +275,16 @@ static const char *set_worker_param(apr_pool_t *p,
         worker->ping_timeout = apr_time_from_sec(ival);
         worker->ping_timeout_set = 1;
     }
+    else if (!strcasecmp(key, "connectiontimeout")) {
+        /* Request timeout in seconds.
+         * Defaults to connection timeout
+         */
+        ival = atoi(val);
+        if (ival < 1)
+            return "Connectiontimeout must be at least one second.";
+        worker->conn_timeout = apr_time_from_sec(ival);
+        worker->conn_timeout_set = 1;
+    }
     else {
         return "unknown Worker parameter";
     }
@@ -337,6 +347,18 @@ static const char *set_balancer_param(proxy_server_conf *conf,
             return NULL;
         }
         return "unknown lbmethod";
+    }
+    else if (!strcasecmp(key, "scolonpathdelim")) {
+        /* If set to 'on' then ';' will also be
+         * used as a session path separator/delim (ala
+         * mod_jk)
+         */
+        if (!strcasecmp(val, "on"))
+            balancer->scolonsep = 1;
+        else if (!strcasecmp(val, "off"))
+            balancer->scolonsep = 0;
+        else
+            return "scolonpathdelim must be On|Off";
     }
     else {
         return "unknown Balancer parameter";

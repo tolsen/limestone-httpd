@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 664005 $ -->
+<!-- $LastChangedRevision: 696752 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -689,6 +689,12 @@ expressions</description>
     connections in the pool the Apache will return <code>SERVER_BUSY</code>
     status to the client.
     </td></tr>
+    <tr><td>connectiontimeout</td>
+        <td>timeout</td>
+        <td>Connect timeout in seconds.
+        The number of seconds Apache waits for the creation of a connection to
+        the backend to complete.
+    </td></tr>
     <tr><td>disablereuse</td>
         <td>Off</td>
         <td>This parameter should be used when you want to force mod_proxy
@@ -782,12 +788,9 @@ expressions</description>
         clears the in-error flag.
     </td></tr>
     <tr><td>timeout</td>
-        <td><directive>Timeout</directive></td>
+        <td><directive module="mod_proxy">ProxyTimeout</directive></td>
         <td>Connection timeout in seconds.
-        If not set the Apache will wait until the free connection
-        is available. This directive is used for limiting the number
-        of connections to the backend server together with <code>max</code>
-        parameter.
+        The number of seconds Apache waits for data sent by / to the backend.
     </td></tr>
     <tr><td>ttl</td>
         <td>-</td>
@@ -813,8 +816,9 @@ expressions</description>
         <td>byrequests</td>
         <td>Balancer load-balance method. Select the load-balancing scheduler
         method to use. Either <code>byrequests</code>, to perform weighted
-        request counting or <code>bytraffic</code>, to perform weighted
-        traffic byte count balancing. Default is <code>byrequests</code>.
+        request counting, <code>bytraffic</code>, to perform weighted
+        traffic byte count balancing, or <code>bybusyness</code>, to perform 
+        pending request balancing. Default is <code>byrequests</code>.
     </td></tr>
     <tr><td>maxattempts</td>
         <td>1</td>
@@ -834,6 +838,13 @@ expressions</description>
         If the backend application server uses different name for cookies
         and url encoded id (like servlet containers) use | to to separate them.
         The first part is for the cookie the second for the path.
+    </td></tr>
+    <tr><td>scolonpathdelim</td>
+        <td>Off</td>
+        <td>If set to <code>On</code> the semi-colon character ';' will be
+        used as an additional sticky session path deliminator/separator. This
+        is mainly used to emulate mod_jk's behavior when dealing with paths such
+        as <code>JSESSIONID=6736bcf34;foo=aabfa</code>
     </td></tr>
     <tr><td>timeout</td>
         <td>0</td>
@@ -1300,7 +1311,7 @@ directly</description>
 <name>ProxyTimeout</name>
 <description>Network timeout for proxied requests</description>
 <syntax>ProxyTimeout <var>seconds</var></syntax>
-<default>ProxyTimeout 300</default>
+<default>Value of <directive module="core">Timeout</directive></default>
 <contextlist><context>server config</context><context>virtual host</context>
 </contextlist>
 <compatibility>Available in Apache 2.0.31 and later</compatibility>

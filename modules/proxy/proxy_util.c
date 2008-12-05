@@ -1377,7 +1377,6 @@ static apr_status_t conn_pool_cleanup(void *theworker)
     proxy_worker *worker = (proxy_worker *)theworker;
     if (worker->cp->res) {
         worker->cp->pool = NULL;
-        apr_reslist_destroy(worker->cp->res);
     }
     return APR_SUCCESS;
 }
@@ -1433,6 +1432,7 @@ PROXY_DECLARE(const char *) ap_proxy_add_worker(proxy_worker **worker,
     (*worker)->id   = proxy_lb_workers;
     (*worker)->flush_packets = flush_off;
     (*worker)->flush_wait = PROXY_FLUSH_WAIT;
+    (*worker)->smax = -1;
     /* Increase the total worker count */
     proxy_lb_workers++;
     init_conn_pool(p, *worker);
@@ -1453,6 +1453,7 @@ PROXY_DECLARE(proxy_worker *) ap_proxy_create_worker(apr_pool_t *p)
     proxy_worker *worker;
     worker = (proxy_worker *)apr_pcalloc(p, sizeof(proxy_worker));
     worker->id = proxy_lb_workers;
+    worker->smax = -1;
     /* Increase the total worker count */
     proxy_lb_workers++;
     init_conn_pool(p, worker);
@@ -1924,7 +1925,7 @@ PROXY_DECLARE(apr_status_t) ap_proxy_initialize_worker(proxy_worker *worker, ser
         if (worker->hmax == 0 || worker->hmax > mpm_threads) {
             worker->hmax = mpm_threads;
         }
-        if (worker->smax == 0 || worker->smax > worker->hmax) {
+        if (worker->smax == -1 || worker->smax > worker->hmax) {
             worker->smax = worker->hmax;
         }
         /* Set min to be lower then smax */
@@ -2169,6 +2170,11 @@ ap_proxy_determine_connection(apr_pool_t *p, request_rec *r,
     else {
         conn->addr = worker->cp->addr;
     }
+    /* Close a possible existing socket if we are told to do so */
+    if (conn->close) {
+        socket_cleanup(conn);
+        conn->close = 0;
+    }
 
     if (err != APR_SUCCESS) {
         return ap_proxyerror(r, HTTP_BAD_GATEWAY,
@@ -2325,8 +2331,11 @@ PROXY_DECLARE(int) ap_proxy_connect_backend(const char *proxy_function,
                           "Failed to set");
         }
 
-        /* Set a timeout on the socket */
-        if (worker->timeout_set == 1) {
+        /* Set a timeout for connecting to the backend on the socket */
+        if (worker->conn_timeout_set) {
+            apr_socket_timeout_set(newsock, worker->conn_timeout);
+        }
+        else if (worker->timeout_set == 1) {
             apr_socket_timeout_set(newsock, worker->timeout);
         }
         else if (conf->timeout_set == 1) {
@@ -2362,6 +2371,17 @@ PROXY_DECLARE(int) ap_proxy_connect_backend(const char *proxy_function,
                          worker->hostname);
             backend_addr = backend_addr->next;
             continue;
+        }
+
+        /* Set a timeout on the socket */
+        if (worker->timeout_set == 1) {
+            apr_socket_timeout_set(newsock, worker->timeout);
+        }
+        else if (conf->timeout_set == 1) {
+            apr_socket_timeout_set(newsock, conf->timeout);
+        }
+        else {
+             apr_socket_timeout_set(newsock, s->timeout);
         }
 
         conn->sock   = newsock;

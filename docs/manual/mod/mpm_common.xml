@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 658335 $ -->
+<!-- $LastChangedRevision: 696758 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -418,8 +418,8 @@ The <var>protocol</var> argument was added in 2.1.5</compatibility>
 
 <directivesynopsis>
 <name>MaxClients</name>
-<description>Maximum number of child processes that will be created
-to serve requests</description>
+<description>Maximum number of simultaneous requests that will
+be served</description>
 <syntax>MaxClients <var>number</var></syntax>
 <default>See usage for details</default>
 <contextlist><context>server config</context></contextlist>
@@ -961,6 +961,27 @@ requests</description>
       it is actually a no-op there and only exists for compatibility
       reasons.</p>
     </note>
+</usage>
+</directivesynopsis>
+
+<directivesynopsis>
+<name>ChrootDir</name>
+<description>Directory for apache to run chroot(8) after startup.</description>
+<syntax>ChrootDir <var>/path/to/directory</var></syntax>
+<default>none</default>
+<contextlist><context>server config</context></contextlist>
+<modulelist><module>event</module>
+<module>prefork</module><module>worker</module></modulelist>
+<compatibility>Available in Apache 2.2.10 and later</compatibility>
+
+<usage>
+    <p>This directive tells the server to <var>chroot(8)</var> to the
+    specified directory after startup, but before accepting requests.</p>
+
+    <p>Note that running the server under chroot is not
+    simple, and requires additional setup, particularly if you are running
+    scripts such as CGI or PHP.  Please make sure you are properly familiar
+    with the operation of chroot before attempting to use this feature.</p>
 </usage>
 </directivesynopsis>
 
