@@ -127,10 +127,14 @@ static int init_balancer_members(proxy_server_conf *conf, server_rec *s,
  * Something like 'JSESSIONID=12345...N'
  */
 static char *get_path_param(apr_pool_t *pool, char *url,
-                            const char *name)
+                            const char *name, int scolon_sep)
 {
     char *path = NULL;
+    char *pathdelims = "?&";
 
+    if (scolon_sep) {
+        pathdelims = ";?&";
+    }
     for (path = strstr(url, name); path; path = strstr(path + 1, name)) {
         path += strlen(name);
         if (*path == '=') {
@@ -140,7 +144,7 @@ static char *get_path_param(apr_pool_t *pool, char *url,
             ++path;
             if (strlen(path)) {
                 char *q;
-                path = apr_strtok(apr_pstrdup(pool, path), "?&", &q);
+                path = apr_strtok(apr_pstrdup(pool, path), pathdelims, &q);
                 return path;
             }
         }
@@ -268,7 +272,7 @@ static proxy_worker *find_session_route(proxy_balancer *balancer,
     
     /* Try to find the sticky route inside url */
     *sticky_used = sticky_path;
-    *route = get_path_param(r->pool, *url, sticky_path);
+    *route = get_path_param(r->pool, *url, sticky_path, balancer->scolonsep);
     if (!*route) {
         *route = get_cookie_param(r, sticky);
         *sticky_used = sticky;
@@ -366,7 +370,9 @@ static proxy_worker *find_best_worker(proxy_balancer *balancer,
         }
 #endif
     }
+
     return candidate;
+
 }
 
 static int rewrite_url(request_rec *r, proxy_worker *worker,
@@ -507,6 +513,8 @@ static int proxy_balancer_pre_request(proxy_worker **worker,
         *worker = runtime;
     }
 
+    (*worker)->s->busy++;
+
     /* Add balancer/worker info to env. */
     apr_table_setn(r->subprocess_env,
                    "BALANCER_NAME", (*balancer)->name);
@@ -567,7 +575,11 @@ static int proxy_balancer_post_request(proxy_worker *worker,
 
 #endif
 
+    if (worker && worker->s->busy)
+        worker->s->busy--;
+
     return OK;
+
 }
 
 static void recalc_factors(proxy_balancer *balancer)
@@ -860,9 +872,10 @@ static int balancer_handler(request_rec *r)
             ap_rvputs(r, "value=\"", ap_escape_uri(r->pool, wsel->name), "\">\n", NULL);
             ap_rvputs(r, "<input type=hidden name=\"b\" ", NULL);
             ap_rvputs(r, "value=\"", bsel->name + sizeof("balancer://") - 1,
-                      "\">\n</form>\n", NULL);
+                      "\">\n", NULL);
             ap_rvputs(r, "<input type=hidden name=\"nonce\" value=\"", 
                       balancer_nonce, "\">\n", NULL);
+            ap_rvputs(r, "</form>\n", NULL);
             ap_rputs("<hr />\n", r);
         }
         ap_rputs(ap_psignature("",r), r);
@@ -992,6 +1005,10 @@ static proxy_worker *find_best_byrequests(proxy_balancer *balancer,
 
     if (mycandidate) {
         mycandidate->s->lbstatus -= total_factor;
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
+                     "proxy: byrequests selected worker \"%s\" : busy %" APR_SIZE_T_FMT " : lbstatus %d",
+                     mycandidate->name, mycandidate->s->busy, mycandidate->s->lbstatus);
+
     }
 
     return mycandidate;
@@ -1070,7 +1087,97 @@ static proxy_worker *find_best_bytraffic(proxy_balancer *balancer,
         cur_lbset++;
     } while (cur_lbset <= max_lbset && !mycandidate);
 
+    if (mycandidate) {
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
+                     "proxy: bytraffic selected worker \"%s\" : busy %" APR_SIZE_T_FMT,
+                     mycandidate->name, mycandidate->s->busy);
+
+    }
+
     return mycandidate;
+}
+
+static proxy_worker *find_best_bybusyness(proxy_balancer *balancer,
+                                request_rec *r)
+{
+
+    int i;
+    proxy_worker *worker;
+    proxy_worker *mycandidate = NULL;
+    int cur_lbset = 0;
+    int max_lbset = 0;
+    int checking_standby;
+    int checked_standby;
+
+    int total_factor = 0;
+    
+    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
+                 "proxy: Entering bybusyness for BALANCER (%s)",
+                 balancer->name);
+
+    /* First try to see if we have available candidate */
+    do {
+
+        checking_standby = checked_standby = 0;
+        while (!mycandidate && !checked_standby) {
+
+            worker = (proxy_worker *)balancer->workers->elts;
+            for (i = 0; i < balancer->workers->nelts; i++, worker++) {
+                if  (!checking_standby) {    /* first time through */
+                    if (worker->s->lbset > max_lbset)
+                        max_lbset = worker->s->lbset;
+                }
+
+                if (worker->s->lbset > cur_lbset)
+                    continue;
+
+                if ( (checking_standby ? !PROXY_WORKER_IS_STANDBY(worker) : PROXY_WORKER_IS_STANDBY(worker)) )
+                    continue;
+
+                /* If the worker is in error state run
+                 * retry on that worker. It will be marked as
+                 * operational if the retry timeout is elapsed.
+                 * The worker might still be unusable, but we try
+                 * anyway.
+                 */
+                if (!PROXY_WORKER_IS_USABLE(worker))
+                    ap_proxy_retry_worker("BALANCER", worker, r->server);
+
+                /* Take into calculation only the workers that are
+                 * not in error state or not disabled.
+                 */
+                if (PROXY_WORKER_IS_USABLE(worker)) {
+
+                    worker->s->lbstatus += worker->s->lbfactor;
+                    total_factor += worker->s->lbfactor;
+                    
+                    if (!mycandidate
+                        || worker->s->busy < mycandidate->s->busy
+                        || (worker->s->busy == mycandidate->s->busy && worker->s->lbstatus > mycandidate->s->lbstatus))
+                        mycandidate = worker;
+
+                }
+
+            }
+
+            checked_standby = checking_standby++;
+
+        }
+
+        cur_lbset++;
+
+    } while (cur_lbset <= max_lbset && !mycandidate);
+
+    if (mycandidate) {
+        mycandidate->s->lbstatus -= total_factor;
+        ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, r->server,
+                     "proxy: bybusyness selected worker \"%s\" : busy %" APR_SIZE_T_FMT " : lbstatus %d",
+                     mycandidate->name, mycandidate->s->busy, mycandidate->s->lbstatus);
+
+    }
+
+    return mycandidate;
+
 }
 
 /*
@@ -1093,6 +1200,14 @@ static const proxy_balancer_method bytraffic =
     NULL
 };
 
+static const proxy_balancer_method bybusyness =
+{
+    "bybusyness",
+    &find_best_bybusyness,
+    NULL
+};
+
+
 static void ap_proxy_balancer_register_hook(apr_pool_t *p)
 {
     /* Only the mpm_winnt has child init hook handler.
@@ -1109,6 +1224,7 @@ static void ap_proxy_balancer_register_hook(apr_pool_t *p)
     proxy_hook_canon_handler(proxy_balancer_canon, NULL, NULL, APR_HOOK_FIRST);
     ap_register_provider(p, PROXY_LBMETHOD, "bytraffic", "0", &bytraffic);
     ap_register_provider(p, PROXY_LBMETHOD, "byrequests", "0", &byrequests);
+    ap_register_provider(p, PROXY_LBMETHOD, "bybusyness", "0", &bybusyness);
 }
 
 module AP_MODULE_DECLARE_DATA proxy_balancer_module = {

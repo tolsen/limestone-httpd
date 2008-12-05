@@ -92,10 +92,10 @@ handler</td></tr>
 <tr><td><a href="mod_autoindex.html#addicon">AddIcon <var>icon</var> <var>name</var> [<var>name</var>]
 ...</a></td><td></td><td>svdh</td><td>B</td></tr><tr><td class="descr" colspan="4">Icon to display for a file selected by name</td></tr>
 <tr class="odd"><td><a href="mod_autoindex.html#addiconbyencoding">AddIconByEncoding <var>icon</var> <var>MIME-encoding</var>
-[<var>MIME-encoding</var>] ...</a></td><td></td><td>svdh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Icon to display next to files selected by MIME 
+[<var>MIME-encoding</var>] ...</a></td><td></td><td>svdh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Icon to display next to files selected by MIME
 content-encoding</td></tr>
 <tr><td><a href="mod_autoindex.html#addiconbytype">AddIconByType <var>icon</var> <var>MIME-type</var>
-[<var>MIME-type</var>] ...</a></td><td></td><td>svdh</td><td>B</td></tr><tr><td class="descr" colspan="4">Icon to display next to files selected by MIME 
+[<var>MIME-type</var>] ...</a></td><td></td><td>svdh</td><td>B</td></tr><tr><td class="descr" colspan="4">Icon to display next to files selected by MIME
 content-type</td></tr>
 <tr class="odd"><td><a href="mod_mime.html#addinputfilter">AddInputFilter <var>filter</var>[;<var>filter</var>...]
 <var>extension</var> [<var>extension</var>] ...</a></td><td></td><td>svdh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Maps filename extensions to the filters that will process
@@ -117,10 +117,10 @@ type</td></tr>
 <tr class="odd"><td><a href="mod_alias.html#alias">Alias <var>URL-path</var>
 <var>file-path</var>|<var>directory-path</var></a></td><td></td><td>sv</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Maps URLs to filesystem locations</td></tr>
 <tr><td><a href="mod_alias.html#aliasmatch">AliasMatch <var>regex</var>
-<var>file-path</var>|<var>directory-path</var></a></td><td></td><td>sv</td><td>B</td></tr><tr><td class="descr" colspan="4">Maps URLs to filesystem locations using regular 
+<var>file-path</var>|<var>directory-path</var></a></td><td></td><td>sv</td><td>B</td></tr><tr><td class="descr" colspan="4">Maps URLs to filesystem locations using regular
 expressions</td></tr>
-<tr class="odd"><td><a href="mod_authz_host.html#allow"> Allow from all|<var>host</var>|env=<var>env-variable</var>
-[<var>host</var>|env=<var>env-variable</var>] ...</a></td><td></td><td>dh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Controls which hosts can access an area of the
+<tr class="odd"><td><a href="mod_authz_host.html#allow"> Allow from all|<var>host</var>|env=[!]<var>env-variable</var>
+[<var>host</var>|env=[!]<var>env-variable</var>] ...</a></td><td></td><td>dh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Controls which hosts can access an area of the
 server</td></tr>
 <tr><td><a href="mod_proxy.html#allowconnect">AllowCONNECT <var>port</var> [<var>port</var>] ...</a></td><td> 443 563 </td><td>sv</td><td>E</td></tr><tr><td class="descr" colspan="4">Ports that are allowed to <code>CONNECT</code> through the
 proxy</td></tr>
@@ -152,19 +152,19 @@ store passwords</td></tr>
 passwords for authentication</td></tr>
 <tr class="odd"><td><a href="mod_authn_default.html#authdefaultauthoritative">AuthDefaultAuthoritative On|Off</a></td><td> On </td><td>dh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Sets whether authentication is passed to lower level
 modules</td></tr>
-<tr><td><a href="mod_auth_digest.html#authdigestalgorithm">AuthDigestAlgorithm MD5|MD5-sess</a></td><td> MD5 </td><td>dh</td><td>X</td></tr><tr><td class="descr" colspan="4">Selects the algorithm used to calculate the challenge and
+<tr><td><a href="mod_auth_digest.html#authdigestalgorithm">AuthDigestAlgorithm MD5|MD5-sess</a></td><td> MD5 </td><td>dh</td><td>E</td></tr><tr><td class="descr" colspan="4">Selects the algorithm used to calculate the challenge and
 response hashes in digest authentication</td></tr>
-<tr class="odd"><td><a href="mod_auth_digest.html#authdigestdomain">AuthDigestDomain <var>URI</var> [<var>URI</var>] ...</a></td><td></td><td>dh</td><td>X</td></tr><tr class="odd"><td class="descr" colspan="4">URIs that are in the same protection space for digest
+<tr class="odd"><td><a href="mod_auth_digest.html#authdigestdomain">AuthDigestDomain <var>URI</var> [<var>URI</var>] ...</a></td><td></td><td>dh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">URIs that are in the same protection space for digest
 authentication</td></tr>
-<tr><td><a href="mod_auth_digest.html#authdigestnccheck">AuthDigestNcCheck On|Off</a></td><td> Off </td><td>s</td><td>X</td></tr><tr><td class="descr" colspan="4">Enables or disables checking of the nonce-count sent by the
+<tr><td><a href="mod_auth_digest.html#authdigestnccheck">AuthDigestNcCheck On|Off</a></td><td> Off </td><td>s</td><td>E</td></tr><tr><td class="descr" colspan="4">Enables or disables checking of the nonce-count sent by the
 server</td></tr>
-<tr class="odd"><td><a href="mod_auth_digest.html#authdigestnonceformat">AuthDigestNonceFormat <var>format</var></a></td><td></td><td>dh</td><td>X</td></tr><tr class="odd"><td class="descr" colspan="4">Determines how the nonce is generated</td></tr>
-<tr><td><a href="mod_auth_digest.html#authdigestnoncelifetime">AuthDigestNonceLifetime <var>seconds</var></a></td><td> 300 </td><td>dh</td><td>X</td></tr><tr><td class="descr" colspan="4">How long the server nonce is valid</td></tr>
+<tr class="odd"><td><a href="mod_auth_digest.html#authdigestnonceformat">AuthDigestNonceFormat <var>format</var></a></td><td></td><td>dh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Determines how the nonce is generated</td></tr>
+<tr><td><a href="mod_auth_digest.html#authdigestnoncelifetime">AuthDigestNonceLifetime <var>seconds</var></a></td><td> 300 </td><td>dh</td><td>E</td></tr><tr><td class="descr" colspan="4">How long the server nonce is valid</td></tr>
 <tr class="odd"><td><a href="mod_auth_digest.html#authdigestprovider">AuthDigestProvider <var>provider-name</var>
-[<var>provider-name</var>] ...</a></td><td> file </td><td>dh</td><td>X</td></tr><tr class="odd"><td class="descr" colspan="4">Sets the authentication provider(s) for this location</td></tr>
-<tr><td><a href="mod_auth_digest.html#authdigestqop">AuthDigestQop none|auth|auth-int [auth|auth-int]</a></td><td> auth </td><td>dh</td><td>X</td></tr><tr><td class="descr" colspan="4">Determines the quality-of-protection to use in digest
+[<var>provider-name</var>] ...</a></td><td> file </td><td>dh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Sets the authentication provider(s) for this location</td></tr>
+<tr><td><a href="mod_auth_digest.html#authdigestqop">AuthDigestQop none|auth|auth-int [auth|auth-int]</a></td><td> auth </td><td>dh</td><td>E</td></tr><tr><td class="descr" colspan="4">Determines the quality-of-protection to use in digest
 authentication</td></tr>
-<tr class="odd"><td><a href="mod_auth_digest.html#authdigestshmemsize">AuthDigestShmemSize <var>size</var></a></td><td> 1000 </td><td>s</td><td>X</td></tr><tr class="odd"><td class="descr" colspan="4">The amount of shared memory to allocate for keeping track
+<tr class="odd"><td><a href="mod_auth_digest.html#authdigestshmemsize">AuthDigestShmemSize <var>size</var></a></td><td> 1000 </td><td>s</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">The amount of shared memory to allocate for keeping track
 of clients</td></tr>
 <tr><td><a href="mod_authz_groupfile.html#authgroupfile">AuthGroupFile <var>file-path</var></a></td><td></td><td>dh</td><td>B</td></tr><tr><td class="descr" colspan="4">Sets the name of a text file containing the list
 of user groups for authorization</td></tr>
@@ -287,8 +287,8 @@ nicht auf andere Weise ermitteln kann.</td></tr>
 <tr class="odd"><td><a href="mod_deflate.html#deflatefilternote">DeflateFilterNote [<var>type</var>] <var>notename</var></a></td><td></td><td>sv</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Places the compression ratio in a note for logging</td></tr>
 <tr><td><a href="mod_deflate.html#deflatememlevel">DeflateMemLevel <var>value</var></a></td><td> 9 </td><td>sv</td><td>E</td></tr><tr><td class="descr" colspan="4">How much memory should be used by zlib for compression</td></tr>
 <tr class="odd"><td><a href="mod_deflate.html#deflatewindowsize">DeflateWindowSize <var>value</var></a></td><td> 15 </td><td>sv</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Zlib compression window size</td></tr>
-<tr><td><a href="mod_authz_host.html#deny"> Deny from all|<var>host</var>|env=<var>env-variable</var>
-[<var>host</var>|env=<var>env-variable</var>] ...</a></td><td></td><td>dh</td><td>B</td></tr><tr><td class="descr" colspan="4">Controls which hosts are denied access to the
+<tr><td><a href="mod_authz_host.html#deny"> Deny from all|<var>host</var>|env=[!]<var>env-variable</var>
+[<var>host</var>|env=[!]<var>env-variable</var>] ...</a></td><td></td><td>dh</td><td>B</td></tr><tr><td class="descr" colspan="4">Controls which hosts are denied access to the
 server</td></tr>
 <tr class="odd"><td><a href="core.html#directory">&lt;Directory <var>Verzeichnispfad</var>&gt;
 ... &lt;/Directory&gt;</a></td><td></td><td>sv</td><td>C</td></tr><tr class="odd"><td class="descr" colspan="4">Umschließt eine Gruppe von Direktiven, die nur auf
@@ -373,10 +373,10 @@ that are not explicitly mapped</td></tr>
 an imagemap</td></tr>
 <tr><td><a href="core.html#include">Include <var>Dateiname</var>|<var>Verzeichnis</var></a></td><td></td><td>svd</td><td>C</td></tr><tr><td class="descr" colspan="4">Fügt andere Konfigurationsdateien innerhalb der
 Server-Konfigurationsdatei ein</td></tr>
-<tr class="odd"><td><a href="mod_autoindex.html#indexignore">IndexIgnore <var>file</var> [<var>file</var>] ...</a></td><td></td><td>svdh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Adds to the list of files to hide when listing 
+<tr class="odd"><td><a href="mod_autoindex.html#indexignore">IndexIgnore <var>file</var> [<var>file</var>] ...</a></td><td></td><td>svdh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Adds to the list of files to hide when listing
 a directory</td></tr>
 <tr><td><a href="mod_autoindex.html#indexoptions">IndexOptions  [+|-]<var>option</var> [[+|-]<var>option</var>]
-...</a></td><td></td><td>svdh</td><td>B</td></tr><tr><td class="descr" colspan="4">Various configuration settings for directory 
+...</a></td><td></td><td>svdh</td><td>B</td></tr><tr><td class="descr" colspan="4">Various configuration settings for directory
 indexing</td></tr>
 <tr class="odd"><td><a href="mod_autoindex.html#indexorderdefault">IndexOrderDefault Ascending|Descending
 Name|Date|Size|Description</a></td><td> Ascending Name </td><td>svdh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Sets the default ordering of the directory index</td></tr>
@@ -548,7 +548,7 @@ expressions</td></tr>
 <tr class="odd"><td><a href="mod_proxy.html#proxyrequests">ProxyRequests On|Off</a></td><td> Off </td><td>sv</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Enables forward (standard) proxy requests</td></tr>
 <tr><td><a href="mod_proxy.html#proxyset">ProxySet <var>url</var> <var>key=value [key=value ...]</var></a></td><td></td><td>d</td><td>E</td></tr><tr><td class="descr" colspan="4">Set various Proxy balancer or member parameters</td></tr>
 <tr class="odd"><td><a href="mod_proxy.html#proxystatus">ProxyStatus Off|On|Full</a></td><td> Off </td><td>sv</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Show Proxy LoadBalancer status in mod_status</td></tr>
-<tr><td><a href="mod_proxy.html#proxytimeout">ProxyTimeout <var>seconds</var></a></td><td> 300 </td><td>sv</td><td>E</td></tr><tr><td class="descr" colspan="4">Network timeout for proxied requests</td></tr>
+<tr><td><a href="mod_proxy.html#proxytimeout">ProxyTimeout <var>seconds</var></a></td><td></td><td>sv</td><td>E</td></tr><tr><td class="descr" colspan="4">Network timeout for proxied requests</td></tr>
 <tr class="odd"><td><a href="mod_proxy.html#proxyvia">ProxyVia On|Off|Full|Block</a></td><td> Off </td><td>sv</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Information provided in the <code>Via</code> HTTP response
 header for proxied requests</td></tr>
 <tr><td><a href="mod_autoindex.html#readmename" id="R" name="R">ReadmeName <var>filename</var></a></td><td></td><td>svdh</td><td>B</td></tr><tr><td class="descr" colspan="4">Name of the file that will be inserted at the end
@@ -557,7 +557,7 @@ of the index listing</td></tr>
 <var>URL</var></a></td><td></td><td>svdh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Sends an external redirect asking the client to fetch
 a different URL</td></tr>
 <tr><td><a href="mod_alias.html#redirectmatch">RedirectMatch [<var>status</var>] <var>regex</var>
-<var>URL</var></a></td><td></td><td>svdh</td><td>B</td></tr><tr><td class="descr" colspan="4">Sends an external redirect based on a regular expression match 
+<var>URL</var></a></td><td></td><td>svdh</td><td>B</td></tr><tr><td class="descr" colspan="4">Sends an external redirect based on a regular expression match
 of the current URL</td></tr>
 <tr class="odd"><td><a href="mod_alias.html#redirectpermanent">RedirectPermanent <var>URL-path</var> <var>URL</var></a></td><td></td><td>svdh</td><td>B</td></tr><tr class="odd"><td class="descr" colspan="4">Sends an external permanent redirect asking the client to fetch
 a different URL</td></tr>
@@ -738,7 +738,7 @@ Certificate verification</td></tr>
   werden</td></tr>
 <tr><td><a href="mpm_common.html#startthreads">StartThreads <var>Anzahl</var></a></td><td></td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Anzahl der Threads, die beim Start erstellt werden</td></tr>
 <tr class="odd"><td><a href="mod_substitute.html#substitute">Substitute <var>s/pattern/substitution/[infq]</var></a></td><td></td><td>dh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Pattern to filter the response content</td></tr>
-<tr><td><a href="mod_suexec.html#suexecusergroup">SuexecUserGroup <em>User Group</em></a></td><td></td><td>sv</td><td>E</td></tr><tr><td class="descr" colspan="4">User and group permissions for CGI programs</td></tr>
+<tr><td><a href="mod_suexec.html#suexecusergroup">SuexecUserGroup <em>User Group</em></a></td><td></td><td>sv</td><td>E</td></tr><tr><td class="descr" colspan="4">User and group for CGI programs to run as</td></tr>
 <tr class="odd"><td><a href="mpm_common.html#threadlimit" id="T" name="T">ThreadLimit <var>Anzahl</var></a></td><td></td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">Bestimmt die Obergrenze der konfigurierbaren Anzahl von Threads
   pro Kindprozess</td></tr>
 <tr><td><a href="mpm_common.html#threadsperchild">ThreadsPerChild <var>Anzahl</var></a></td><td></td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Anzahl der Threads, die mit jedem Kindprozess gestartet
