@@ -4225,7 +4225,7 @@ static int dav_is_allow_method_lock(dav_request *dav_r,
     dav_resource *resource = dav_r->resource;
     dav_error *err;
 
-    if (resource->exists && acl_hook != NULL) 
+    if (acl_hook != NULL) 
     {
 	int is_acl_allow = 0;
         
