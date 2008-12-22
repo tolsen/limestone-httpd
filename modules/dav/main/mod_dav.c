@@ -85,10 +85,8 @@ typedef struct {
     int locktimeout;
     int allow_depthinfinity;
     int allow_unauthenticated_access;
-    const char *rewrite_cond_lhs;
-    const char *rewrite_cond_rhs;
-    const char *rewrite_rule_lhs;
-    const char *rewrite_rule_rhs;
+    apr_array_header_t *rewrite_conds;
+    apr_array_header_t *rewrite_rules;
 } dav_dir_conf;
 
 /* per-server configuration */
@@ -96,6 +94,11 @@ typedef struct {
     int unused;
 
 } dav_server_conf;
+
+typedef struct {
+    const char *lhs;
+    const char *rhs;
+} dav_rewrite_entry;
 
 #define DAV_INHERIT_VALUE(parent, child, field) \
                 ((child)->field ? (child)->field : (parent)->field)
@@ -188,8 +191,6 @@ static void *dav_create_server_config(apr_pool_t *p, server_rec *s)
 
     newconf = (dav_server_conf *)apr_pcalloc(p, sizeof(*newconf));
 
-    /* ### this isn't used at the moment... */
-
     return newconf;
 }
 
@@ -227,6 +228,8 @@ static void *dav_create_dir_config(apr_pool_t *p, char *dir)
         conf->dir = d;
     }
     conf->allow_unauthenticated_access = -1;
+    conf->rewrite_conds = apr_array_make(p, 2, sizeof(dav_rewrite_entry));
+    conf->rewrite_rules = apr_array_make(p, 2, sizeof(dav_rewrite_entry));
 
     return conf;
 }
@@ -261,16 +264,15 @@ static void *dav_merge_dir_config(apr_pool_t *p, void *base, void *overrides)
     newconf->rootpath = DAV_INHERIT_VALUE(child, parent, rootpath);
     newconf->allow_depthinfinity = DAV_INHERIT_VALUE(parent, child,
                                                      allow_depthinfinity);
-    newconf->allow_unauthenticated_access = child->allow_unauthenticated_access == -1 ?
-      parent->allow_unauthenticated_access : child->allow_unauthenticated_access;
-    newconf->rewrite_cond_lhs = DAV_INHERIT_VALUE(parent, child,
-                                                     rewrite_cond_lhs);
-    newconf->rewrite_cond_rhs = DAV_INHERIT_VALUE(parent, child,
-                                                     rewrite_cond_rhs);
-    newconf->rewrite_rule_lhs = DAV_INHERIT_VALUE(parent, child,
-                                                     rewrite_rule_lhs);
-    newconf->rewrite_rule_rhs = DAV_INHERIT_VALUE(parent, child,
-                                                     rewrite_rule_rhs);
+    newconf->allow_unauthenticated_access = 
+        child->allow_unauthenticated_access == -1 ? 
+            parent->allow_unauthenticated_access : 
+            child->allow_unauthenticated_access;
+
+    newconf->rewrite_conds = apr_array_append(p, child->rewrite_conds, 
+                                                parent->rewrite_conds);
+    newconf->rewrite_rules = apr_array_append(p, child->rewrite_rules, 
+                                                parent->rewrite_rules);
     return newconf;
 }
 
@@ -428,9 +430,10 @@ static const char *dav_cmd_davresponserewritecond(cmd_parms *cmd, void *config,
                                                   const char *lhs, const char *rhs)
 {
     dav_dir_conf *conf = (dav_dir_conf *)config;
+    dav_rewrite_entry *new_entry = apr_array_push(conf->rewrite_conds);
 
-    conf->rewrite_cond_lhs = lhs;
-    conf->rewrite_cond_rhs = rhs;
+    new_entry->lhs = lhs;
+    new_entry->rhs = rhs;
 
     return NULL;
 }
@@ -439,9 +442,10 @@ static const char *dav_cmd_davresponserewriterule(cmd_parms *cmd, void *config,
                                                   const char *lhs, const char *rhs)
 {
     dav_dir_conf *conf = (dav_dir_conf *)config;
+    dav_rewrite_entry *new_entry = apr_array_push(conf->rewrite_rules);
 
-    conf->rewrite_rule_lhs = lhs;
-    conf->rewrite_rule_rhs = rhs;
+    new_entry->lhs = lhs;
+    new_entry->rhs = rhs;
 
     return NULL;
 }
@@ -585,21 +589,41 @@ const char *dav_get_response_href(request_rec *r, const char *uri)
     ap_regmatch_t pmatch[AP_MAX_REG_MATCH];
     char *result_uri = apr_pstrdup(r->pool, uri);
     const dav_hooks_repository *repos_hooks = dav_get_repos_hooks(r);
+    int i, match = 0;
+    dav_rewrite_entry cond_i, rule_i;
+
 
     /* check rewrite condition, we only support Host for now */
-    if(!apr_table_get(r->subprocess_env, "no-response-rewrite") &&
-       !apr_strnatcasecmp(conf->rewrite_cond_lhs, "Host")) {
-        cond_regex = ap_pregcomp(r->pool, conf->rewrite_cond_rhs, 0);
-        if(!ap_regexec(cond_regex, host, nmatch, pmatch, 0)) {
-            /* condition matched, apply the rule */
-            rule_regex = ap_pregcomp(r->pool, conf->rewrite_rule_lhs, 0);
-            if(!ap_regexec(rule_regex, uri, nmatch, pmatch, 0)) {
-                /* uri matches the rule lhs, rewrite uri to rhs */
-                result_uri = ap_pregsub(r->pool, conf->rewrite_rule_rhs, uri, nmatch, pmatch);
+    if(!apr_table_get(r->subprocess_env, "no-response-rewrite")) {
+        for(i=0; i<conf->rewrite_conds->nelts; i++) {
+            match = 0;
+            cond_i = ((dav_rewrite_entry *)conf->rewrite_conds->elts)[i];
+            rule_i = ((dav_rewrite_entry *)conf->rewrite_rules->elts)[i];
+
+            cond_regex = ap_pregcomp(r->pool, cond_i.rhs, 0);
+            if(!apr_strnatcasecmp(cond_i.lhs, "Host")) {
+                if(!ap_regexec(cond_regex, host, nmatch, pmatch, 0)) {
+                    /* condition matched, apply the rule */
+                    match = 1;
+                }
             }
-            ap_pregfree(r->pool, rule_regex);
+            else if(!apr_strnatcasecmp(cond_i.lhs, "Request-URI")) {
+                if(!ap_regexec(cond_regex, r->unparsed_uri, nmatch, pmatch, 0)) {
+                    match = 1;
+                }
+            }
+
+            if (match) {
+                rule_regex = ap_pregcomp(r->pool, rule_i.lhs, 0);
+                if(!ap_regexec(rule_regex, uri, nmatch, pmatch, 0)) {
+                    /* uri matches the rule lhs, rewrite uri to rhs */
+                    result_uri = ap_pregsub(r->pool, rule_i.rhs, result_uri, 
+                                            nmatch, pmatch);
+                }
+                ap_pregfree(r->pool, rule_regex);
+            }
+            ap_pregfree(r->pool, cond_regex);
         }
-        ap_pregfree(r->pool, cond_regex);
     }
 
     return repos_hooks->response_href_transform(r, result_uri);
