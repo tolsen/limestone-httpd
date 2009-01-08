@@ -53,7 +53,8 @@ DAV_DECLARE(dav_error*) dav_new_error_tag(apr_pool_t *p, int status,
                                           int error_id, const char *desc,
                                           const char *namespace,
                                           const char *tagname,
-                                          const char *content)
+                                          const char *content,
+                                          const char *prolog)
 {
     dav_error *err = dav_new_error(p, status, error_id, desc);
 
@@ -61,6 +62,7 @@ DAV_DECLARE(dav_error*) dav_new_error_tag(apr_pool_t *p, int status,
     err->namespace = namespace;
     err->content = "";
     if (content) err->content = content;
+    err->prolog = prolog;
 
     return err;
 }
@@ -856,14 +858,14 @@ dav_error *dav_validate_ifheader_locks(request_rec *r,
                                          NULL, NULL, "lock-token-submitted",
                                          apr_psprintf(pool, 
                                                       "<D:href>%s</D:href>", 
-                                                      l_i->lockroot));
+                                                      l_i->lockroot), NULL);
             }
     } else if ( flags & DAV_VALIDATE_A_LOCK && locks) {
             return dav_new_error_tag(pool, HTTP_LOCKED, 0,
                                      "The resource is locked", locks->lockroot, 
                                      "lock-token-submitted",
                                      apr_psprintf(pool, "<D:href>%s</D:href>", 
-                                                  locks->lockroot));    
+                                                  locks->lockroot), NULL);    
     }
 
     return NULL;

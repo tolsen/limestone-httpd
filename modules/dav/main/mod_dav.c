@@ -515,8 +515,14 @@ static int dav_error_response_tag(request_rec *r,
 
     ap_set_content_type(r, DAV_XML_CONTENT_TYPE);
 
-    ap_rputs(DAV_XML_HEADER DEBUG_CR
-             "<D:error xmlns:D=\"DAV:\"", r);
+    ap_rputs(DAV_XML_HEADER DEBUG_CR, r);
+
+    /* append any additional prolog supplied */
+    if (err->prolog) {
+        ap_rputs(err->prolog, r);
+    }
+
+    ap_rputs("<D:error xmlns:D=\"DAV:\"", r);
 
     if (err->desc != NULL) {
         /* ### should move this namespace somewhere (with the others!) */
@@ -2294,7 +2300,7 @@ static int dav_method_acl(dav_request *dav_r)
         {
             err = dav_new_error_tag(r->pool, HTTP_FORBIDDEN, 0, 
                                     "wrong principal in ace", NULL, 
-                                    "recognized-principal", NULL);
+                                    "recognized-principal", NULL, NULL);
         }
     }
 
@@ -6105,7 +6111,7 @@ static int dav_method_bind(dav_request *dav_r)
     if (!binding_parent->collection) {
         err = dav_new_error_tag
           (r->pool, HTTP_CONFLICT, 0, "Request-URI not a collection",
-           NULL, "binding-into-collection", NULL);
+           NULL, "binding-into-collection", NULL, NULL);
         return dav_handle_err(r, err, NULL);
     }
 
@@ -6193,7 +6199,7 @@ static int dav_method_bind(dav_request *dav_r)
 
     if (!resource->exists) {
         err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0, "href doesn't exist",
-                                NULL, "bind-source-exists", NULL);
+                                NULL, "bind-source-exists", NULL, NULL);
         return dav_handle_err(r, err, NULL);
     }
 
@@ -6353,7 +6359,7 @@ static int dav_method_mkredirectref(dav_request *dav_r)
     if (resource->exists) {
         err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0, 
                                 "A resource already exists at the request-uri",
-                                NULL, "resource-must-be-null", NULL);
+                                NULL, "resource-must-be-null", NULL, NULL);
         return dav_handle_err(r, err, NULL);
     }
 
@@ -6362,7 +6368,7 @@ static int dav_method_mkredirectref(dav_request *dav_r)
         !parent_resource->collection) {
         err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0,
                                 "Parent collection does not exist.", NULL, 
-                                "parent-resource-must-be-non-null", NULL);
+                                "parent-resource-must-be-non-null", NULL, NULL);
         return dav_handle_err(r, err, NULL);
     }
 
@@ -6386,7 +6392,7 @@ static int dav_method_mkredirectref(dav_request *dav_r)
     if (t == DAV_REDIRECTREF_INVALID) {
         err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0,
                                 "redirect-lifetime supplied is not supported.",
-                                NULL, "redirect-lifetime-supported", NULL);
+                                NULL, "redirect-lifetime-supported", NULL, NULL);
         return dav_handle_err(r, err, NULL);
     }
     
@@ -6416,7 +6422,7 @@ static int dav_method_mkredirectref(dav_request *dav_r)
     if (!legal_reftarget) {
         err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0, 
                                 "Illegal reftarget.", NULL, "legal-reftarget",
-                                NULL);
+                                NULL, NULL);
         return dav_handle_err(r, err, NULL);
     }
 
@@ -6469,7 +6475,7 @@ static int dav_method_updateredirectref(dav_request *dav_r)
     if (resource->type != DAV_RESOURCE_TYPE_REDIRECTREF) {
         err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0,
                                 "request-uri is not a redirect reference.",
-                                NULL, "must-be-redirectref", NULL);
+                                NULL, "must-be-redirectref", NULL, NULL);
         return dav_handle_err(r, err, NULL);
     }
 
@@ -6488,7 +6494,7 @@ static int dav_method_updateredirectref(dav_request *dav_r)
     if (t == DAV_REDIRECTREF_INVALID) {
         err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0,
                                 "redirect-lifetime supplied is not supported.",
-                                NULL, "redirect-lifetime-supported", NULL);
+                                NULL, "redirect-lifetime-supported", NULL, NULL);
         return dav_handle_err(r, err, NULL);
     }
 
@@ -6513,7 +6519,7 @@ static int dav_method_updateredirectref(dav_request *dav_r)
     if (!legal_reftarget) {
         err = dav_new_error_tag(r->pool, HTTP_CONFLICT, 0, 
                                 "Illegal reftarget.", NULL, "legal-reftarget",
-                                NULL);
+                                NULL, NULL);
         return dav_handle_err(r, err, NULL);
     }
 

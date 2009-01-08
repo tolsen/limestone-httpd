@@ -962,7 +962,7 @@ DAV_DECLARE_NONSTD(void) dav_prop_validate(dav_prop_ctx *ctx)
                                      "Property is read-only.",
                                      NULL,
                                      "cannot-modify-protected-property",
-                                     NULL);
+                                     NULL, NULL);
         return;
     }
 

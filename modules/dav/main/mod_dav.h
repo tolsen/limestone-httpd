@@ -136,6 +136,7 @@ typedef struct dav_error {
     const char *namespace;      /* [optional] namespace of error */
     const char *tagname;        /* name of error-tag */
     const char *content;
+    const char *prolog;         /* prolog of the XML error response */
 
     struct dav_error *prev;     /* previous error (in stack) */
 
@@ -158,7 +159,8 @@ DAV_DECLARE(dav_error*) dav_new_error_tag(apr_pool_t *p, int status,
                                           int error_id, const char *desc,
                                           const char *namespace,
                                           const char *tagname,
-                                          const char *content);
+                                          const char *content,
+                                          const char *prolog);
 
 
 /*
