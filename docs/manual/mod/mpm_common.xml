@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 696758 $ -->
+<!-- $LastChangedRevision: 706316 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -418,8 +418,8 @@ The <var>protocol</var> argument was added in 2.1.5</compatibility>
 
 <directivesynopsis>
 <name>MaxClients</name>
-<description>Maximum number of simultaneous requests that will
-be served</description>
+<description>Maximum number of connections that will be processed
+simultaneously</description>
 <syntax>MaxClients <var>number</var></syntax>
 <default>See usage for details</default>
 <contextlist><context>server config</context></contextlist>
