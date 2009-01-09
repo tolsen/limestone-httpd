@@ -239,131 +239,134 @@ stored</td></tr>
 <tr class="odd"><td><a href="mod_speling.html#checkcaseonly">CheckCaseOnly on|off</a></td><td> Off </td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Limits the action of the speling module to case corrections</td></tr>
 <tr><td><a href="mod_speling.html#checkspelling">CheckSpelling on|off</a></td><td> Off </td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">Enables the spelling 
 module</td></tr>
-<tr class="odd"><td><a href="core.html#contentdigest">ContentDigest On|Off</a></td><td> Off </td><td>skdh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4"><code>Content-MD5</code> HTTP yanıt başlıklarının üretimini
+<tr class="odd"><td><a href="mpm_common.html#chrootdir">ChrootDir <var>/dizin/yolu/</var></a></td><td></td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">Başlatıldıktan sonra Apache’nin chroot(8) yapacağı dizin
+</td></tr>
+<tr><td><a href="core.html#contentdigest">ContentDigest On|Off</a></td><td> Off </td><td>skdh</td><td>Ç</td></tr><tr><td class="descr" colspan="4"><code>Content-MD5</code> HTTP yanıt başlıklarının üretimini
   etkin kılar.</td></tr>
-<tr><td><a href="mod_usertrack.html#cookiedomain">CookieDomain <em>domain</em></a></td><td></td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">The domain to which the tracking cookie applies</td></tr>
-<tr class="odd"><td><a href="mod_usertrack.html#cookieexpires">CookieExpires <em>expiry-period</em></a></td><td></td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Expiry time for the tracking cookie</td></tr>
-<tr><td><a href="mod_log_config.html#cookielog">CookieLog <var>dosya-adı</var></a></td><td></td><td>sk</td><td>T</td></tr><tr><td class="descr" colspan="4">Çerezleri günlüğe kaydetmek için dosya ismi belirtmekte
+<tr class="odd"><td><a href="mod_usertrack.html#cookiedomain">CookieDomain <em>domain</em></a></td><td></td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">The domain to which the tracking cookie applies</td></tr>
+<tr><td><a href="mod_usertrack.html#cookieexpires">CookieExpires <em>expiry-period</em></a></td><td></td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">Expiry time for the tracking cookie</td></tr>
+<tr class="odd"><td><a href="mod_log_config.html#cookielog">CookieLog <var>dosya-adı</var></a></td><td></td><td>sk</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Çerezleri günlüğe kaydetmek için dosya ismi belirtmekte
 kullanılır.</td></tr>
-<tr class="odd"><td><a href="mod_usertrack.html#cookiename">CookieName <em>token</em></a></td><td> Apache </td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Name of the tracking cookie</td></tr>
-<tr><td><a href="mod_usertrack.html#cookiestyle">CookieStyle
-    <em>Netscape|Cookie|Cookie2|RFC2109|RFC2965</em></a></td><td> Netscape </td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">Format of the cookie header field</td></tr>
-<tr class="odd"><td><a href="mod_usertrack.html#cookietracking">CookieTracking on|off</a></td><td> off </td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Enables tracking cookie</td></tr>
-<tr><td><a href="mpm_common.html#coredumpdirectory">CoreDumpDirectory <var>dizin</var></a></td><td></td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4"><code>core</code> dosyasını dökümlemek üzere Apache’nin geçmeye
+<tr><td><a href="mod_usertrack.html#cookiename">CookieName <em>token</em></a></td><td> Apache </td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">Name of the tracking cookie</td></tr>
+<tr class="odd"><td><a href="mod_usertrack.html#cookiestyle">CookieStyle
+    <em>Netscape|Cookie|Cookie2|RFC2109|RFC2965</em></a></td><td> Netscape </td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Format of the cookie header field</td></tr>
+<tr><td><a href="mod_usertrack.html#cookietracking">CookieTracking on|off</a></td><td> off </td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">Enables tracking cookie</td></tr>
+<tr class="odd"><td><a href="mpm_common.html#coredumpdirectory">CoreDumpDirectory <var>dizin</var></a></td><td></td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4"><code>core</code> dosyasını dökümlemek üzere Apache’nin geçmeye
   çalışacağı dizin.</td></tr>
-<tr class="odd"><td><a href="mod_log_config.html#customlog">CustomLog  <var>dosya</var>|<var>borulu-süreç</var>
+<tr><td><a href="mod_log_config.html#customlog">CustomLog  <var>dosya</var>|<var>borulu-süreç</var>
 <var>biçem</var>|<var>takma-ad</var>
-[env=[!]<var>ortam-değişkeni</var>]</a></td><td></td><td>sk</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Günlük dosyasın ismini ve girdi biçemini belirler.</td></tr>
-<tr><td><a href="mod_dav.html#dav" id="D" name="D">Dav On|Off|<var>provider-name</var></a></td><td> Off </td><td>d</td><td>E</td></tr><tr><td class="descr" colspan="4">Enable WebDAV HTTP methods</td></tr>
-<tr class="odd"><td><a href="mod_dav.html#davdepthinfinity">DavDepthInfinity on|off</a></td><td> off </td><td>skd</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Allow PROPFIND, Depth: Infinity requests</td></tr>
-<tr><td><a href="mod_dav_lock.html#davgenericlockdb">DavGenericLockDB <var>file-path</var></a></td><td></td><td>skd</td><td>E</td></tr><tr><td class="descr" colspan="4">Location of the DAV lock database</td></tr>
-<tr class="odd"><td><a href="mod_dav_fs.html#davlockdb">DavLockDB <var>file-path</var></a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Location of the DAV lock database</td></tr>
-<tr><td><a href="mod_dav.html#davmintimeout">DavMinTimeout <var>seconds</var></a></td><td> 0 </td><td>skd</td><td>E</td></tr><tr><td class="descr" colspan="4">Minimum amount of time the server holds a lock on
+[env=[!]<var>ortam-değişkeni</var>]</a></td><td></td><td>sk</td><td>T</td></tr><tr><td class="descr" colspan="4">Günlük dosyasın ismini ve girdi biçemini belirler.</td></tr>
+<tr class="odd"><td><a href="mod_dav.html#dav" id="D" name="D">Dav On|Off|<var>provider-name</var></a></td><td> Off </td><td>d</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Enable WebDAV HTTP methods</td></tr>
+<tr><td><a href="mod_dav.html#davdepthinfinity">DavDepthInfinity on|off</a></td><td> off </td><td>skd</td><td>E</td></tr><tr><td class="descr" colspan="4">Allow PROPFIND, Depth: Infinity requests</td></tr>
+<tr class="odd"><td><a href="mod_dav_lock.html#davgenericlockdb">DavGenericLockDB <var>file-path</var></a></td><td></td><td>skd</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Location of the DAV lock database</td></tr>
+<tr><td><a href="mod_dav_fs.html#davlockdb">DavLockDB <var>file-path</var></a></td><td></td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Location of the DAV lock database</td></tr>
+<tr class="odd"><td><a href="mod_dav.html#davmintimeout">DavMinTimeout <var>seconds</var></a></td><td> 0 </td><td>skd</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Minimum amount of time the server holds a lock on
 a DAV resource</td></tr>
-<tr class="odd"><td><a href="mod_dbd.html#dbdexptime">DBDExptime <var>time-in-seconds</var></a></td><td> 300 </td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Keepalive time for idle connections</td></tr>
-<tr><td><a href="mod_dbd.html#dbdkeep">DBDKeep <var>number</var></a></td><td> 2 </td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Maximum sustained number of connections</td></tr>
-<tr class="odd"><td><a href="mod_dbd.html#dbdmax">DBDMax <var>number</var></a></td><td> 10 </td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Maximum number of connections</td></tr>
-<tr><td><a href="mod_dbd.html#dbdmin">DBDMin <var>number</var></a></td><td> 1 </td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Minimum number of connections</td></tr>
-<tr class="odd"><td><a href="mod_dbd.html#dbdparams">DBDParams
-<var>param1</var>=<var>value1</var>[,<var>param2</var>=<var>value2</var>]</a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Parameters for database connection</td></tr>
-<tr><td><a href="mod_dbd.html#dbdpersist">DBDPersist On|Off</a></td><td></td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Whether to use persistent connections</td></tr>
-<tr class="odd"><td><a href="mod_dbd.html#dbdpreparesql">DBDPrepareSQL <var>"SQL statement"</var> <var>label</var></a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Define an SQL prepared statement</td></tr>
-<tr><td><a href="mod_dbd.html#dbdriver">DBDriver <var>name</var></a></td><td></td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Specify an SQL driver</td></tr>
-<tr class="odd"><td><a href="mod_autoindex.html#defaulticon">DefaultIcon <var>URL-yolu</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Özel bir simge atanmamış dosyalar için gösterilecek simgeyi
+<tr><td><a href="mod_dbd.html#dbdexptime">DBDExptime <var>time-in-seconds</var></a></td><td> 300 </td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Keepalive time for idle connections</td></tr>
+<tr class="odd"><td><a href="mod_dbd.html#dbdkeep">DBDKeep <var>number</var></a></td><td> 2 </td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Maximum sustained number of connections</td></tr>
+<tr><td><a href="mod_dbd.html#dbdmax">DBDMax <var>number</var></a></td><td> 10 </td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Maximum number of connections</td></tr>
+<tr class="odd"><td><a href="mod_dbd.html#dbdmin">DBDMin <var>number</var></a></td><td> 1 </td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Minimum number of connections</td></tr>
+<tr><td><a href="mod_dbd.html#dbdparams">DBDParams
+<var>param1</var>=<var>value1</var>[,<var>param2</var>=<var>value2</var>]</a></td><td></td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Parameters for database connection</td></tr>
+<tr class="odd"><td><a href="mod_dbd.html#dbdpersist">DBDPersist On|Off</a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Whether to use persistent connections</td></tr>
+<tr><td><a href="mod_dbd.html#dbdpreparesql">DBDPrepareSQL <var>"SQL statement"</var> <var>label</var></a></td><td></td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Define an SQL prepared statement</td></tr>
+<tr class="odd"><td><a href="mod_dbd.html#dbdriver">DBDriver <var>name</var></a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Specify an SQL driver</td></tr>
+<tr><td><a href="mod_autoindex.html#defaulticon">DefaultIcon <var>URL-yolu</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Özel bir simge atanmamış dosyalar için gösterilecek simgeyi
 belirler.</td></tr>
-<tr><td><a href="mod_mime.html#defaultlanguage">DefaultLanguage <var>MIME-lang</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Sets all files in the given scope to the specified
+<tr class="odd"><td><a href="mod_mime.html#defaultlanguage">DefaultLanguage <var>MIME-lang</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Sets all files in the given scope to the specified
 language</td></tr>
-<tr class="odd"><td><a href="core.html#defaulttype">DefaultType <var>MIME-türü</var>|none</a></td><td> text/plain </td><td>skdh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Sunucunun MIME türünü saptayamadığı durumda göndereceği MIME
+<tr><td><a href="core.html#defaulttype">DefaultType <var>MIME-türü</var>|none</a></td><td> text/plain </td><td>skdh</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Sunucunun MIME türünü saptayamadığı durumda göndereceği MIME
   içerik türünü belirler.</td></tr>
-<tr><td><a href="mod_deflate.html#deflatebuffersize">DeflateBufferSize <var>value</var></a></td><td> 8096 </td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Fragment size to be compressed at one time by zlib</td></tr>
-<tr class="odd"><td><a href="mod_deflate.html#deflatecompressionlevel">DeflateCompressionLevel <var>value</var></a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">How much compression do we apply to the output</td></tr>
-<tr><td><a href="mod_deflate.html#deflatefilternote">DeflateFilterNote [<var>type</var>] <var>notename</var></a></td><td></td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Places the compression ratio in a note for logging</td></tr>
-<tr class="odd"><td><a href="mod_deflate.html#deflatememlevel">DeflateMemLevel <var>value</var></a></td><td> 9 </td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">How much memory should be used by zlib for compression</td></tr>
-<tr><td><a href="mod_deflate.html#deflatewindowsize">DeflateWindowSize <var>value</var></a></td><td> 15 </td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Zlib compression window size</td></tr>
-<tr class="odd"><td><a href="mod_authz_host.html#deny"> Deny from all|<var>host</var>|env=[!]<var>env-variable</var>
-[<var>host</var>|env=[!]<var>env-variable</var>] ...</a></td><td></td><td>dh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Controls which hosts are denied access to the
+<tr class="odd"><td><a href="mod_deflate.html#deflatebuffersize">DeflateBufferSize <var>value</var></a></td><td> 8096 </td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Fragment size to be compressed at one time by zlib</td></tr>
+<tr><td><a href="mod_deflate.html#deflatecompressionlevel">DeflateCompressionLevel <var>value</var></a></td><td></td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">How much compression do we apply to the output</td></tr>
+<tr class="odd"><td><a href="mod_deflate.html#deflatefilternote">DeflateFilterNote [<var>type</var>] <var>notename</var></a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Places the compression ratio in a note for logging</td></tr>
+<tr><td><a href="mod_deflate.html#deflatememlevel">DeflateMemLevel <var>value</var></a></td><td> 9 </td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">How much memory should be used by zlib for compression</td></tr>
+<tr class="odd"><td><a href="mod_deflate.html#deflatewindowsize">DeflateWindowSize <var>value</var></a></td><td> 15 </td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Zlib compression window size</td></tr>
+<tr><td><a href="mod_authz_host.html#deny"> Deny from all|<var>host</var>|env=[!]<var>env-variable</var>
+[<var>host</var>|env=[!]<var>env-variable</var>] ...</a></td><td></td><td>dh</td><td>T</td></tr><tr><td class="descr" colspan="4">Controls which hosts are denied access to the
 server</td></tr>
-<tr><td><a href="core.html#directory">&lt;Directory <var>dizin-yolu</var>&gt;
-... &lt;/Directory&gt;</a></td><td></td><td>sk</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Sadece ismi belirtilen dosya sistemi dizininde ve bunun
+<tr class="odd"><td><a href="core.html#directory">&lt;Directory <var>dizin-yolu</var>&gt;
+... &lt;/Directory&gt;</a></td><td></td><td>sk</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Sadece ismi belirtilen dosya sistemi dizininde ve bunun
   altdizinlerinde uygulanacak bir yönerge grubunu sarmalar.</td></tr>
-<tr class="odd"><td><a href="mod_dir.html#directoryindex">DirectoryIndex
-    <var>yerel-url</var> [<var>yerel-url</var>] ...</a></td><td> index.html </td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">İstemci bir dizin istediğinde dizin içeriğini listeler.
+<tr><td><a href="mod_dir.html#directoryindex">DirectoryIndex
+    <var>yerel-url</var> [<var>yerel-url</var>] ...</a></td><td> index.html </td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">İstemci bir dizin istediğinde dizin içeriğini listeler.
 </td></tr>
-<tr><td><a href="core.html#directorymatch">&lt;DirectoryMatch <var>düzifd</var>&gt;
-... &lt;/DirectoryMatch&gt;</a></td><td></td><td>sk</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Bir düzenli ifade ile eşleşen dosya sistemi dizininde ve bunun
+<tr class="odd"><td><a href="core.html#directorymatch">&lt;DirectoryMatch <var>düzifd</var>&gt;
+... &lt;/DirectoryMatch&gt;</a></td><td></td><td>sk</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Bir düzenli ifade ile eşleşen dosya sistemi dizininde ve bunun
   altdizinlerinde uygulanacak bir yönerge grubunu sarmalar.</td></tr>
-<tr class="odd"><td><a href="mod_dir.html#directoryslash">DirectorySlash On|Off</a></td><td> On </td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Bölü çizgisi ile biten yönlendirmeleri açar/kapar.</td></tr>
-<tr><td><a href="core.html#documentroot">DocumentRoot <var>dizin-yolu</var></a></td><td> /usr/local/apache/h +</td><td>sk</td><td>Ç</td></tr><tr><td class="descr" colspan="4">İstemciye görünür olan ana belge ağacının kök dizinini belirler.</td></tr>
-<tr class="odd"><td><a href="mod_dumpio.html#dumpioinput">DumpIOInput On|Off</a></td><td> Off </td><td>s</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Dump all input data to the error log</td></tr>
-<tr><td><a href="mod_dumpio.html#dumpiologlevel">DumpIOLogLevel <var>level</var></a></td><td> debug </td><td>s</td><td>E</td></tr><tr><td class="descr" colspan="4">Controls the logging level of the DumpIO output</td></tr>
-<tr class="odd"><td><a href="mod_dumpio.html#dumpiooutput">DumpIOOutput On|Off</a></td><td> Off </td><td>s</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Dump all output data to the error log</td></tr>
-<tr><td><a href="mpm_common.html#enableexceptionhook" id="E" name="E">EnableExceptionHook On|Off</a></td><td> Off </td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Bir çöküş sonrası olağandışılık eylemcilerini çalıştıracak
+<tr><td><a href="mod_dir.html#directoryslash">DirectorySlash On|Off</a></td><td> On </td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Bölü çizgisi ile biten yönlendirmeleri açar/kapar.</td></tr>
+<tr class="odd"><td><a href="core.html#documentroot">DocumentRoot <var>dizin-yolu</var></a></td><td> /usr/local/apache/h +</td><td>sk</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">İstemciye görünür olan ana belge ağacının kök dizinini belirler.</td></tr>
+<tr><td><a href="mod_dumpio.html#dumpioinput">DumpIOInput On|Off</a></td><td> Off </td><td>s</td><td>E</td></tr><tr><td class="descr" colspan="4">Dump all input data to the error log</td></tr>
+<tr class="odd"><td><a href="mod_dumpio.html#dumpiologlevel">DumpIOLogLevel <var>level</var></a></td><td> debug </td><td>s</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Controls the logging level of the DumpIO output</td></tr>
+<tr><td><a href="mod_dumpio.html#dumpiooutput">DumpIOOutput On|Off</a></td><td> Off </td><td>s</td><td>E</td></tr><tr><td class="descr" colspan="4">Dump all output data to the error log</td></tr>
+<tr class="odd"><td><a href="mpm_common.html#enableexceptionhook" id="E" name="E">EnableExceptionHook On|Off</a></td><td> Off </td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">Bir çöküş sonrası olağandışılık eylemcilerini çalıştıracak
   kancayı etkin kılar.</td></tr>
-<tr class="odd"><td><a href="core.html#enablemmap">EnableMMAP On|Off</a></td><td> On </td><td>skdh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Teslimat sırasında okunacak dosyalar için bellek eşlemeyi etkin
+<tr><td><a href="core.html#enablemmap">EnableMMAP On|Off</a></td><td> On </td><td>skdh</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Teslimat sırasında okunacak dosyalar için bellek eşlemeyi etkin
   kılar.</td></tr>
-<tr><td><a href="core.html#enablesendfile">EnableSendfile On|Off</a></td><td> On </td><td>skdh</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Dosyaların istemciye tesliminde çekirdeğin dosya gönderme
+<tr class="odd"><td><a href="core.html#enablesendfile">EnableSendfile On|Off</a></td><td> On </td><td>skdh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Dosyaların istemciye tesliminde çekirdeğin dosya gönderme
   desteğinin kullanımını etkin kılar.</td></tr>
-<tr class="odd"><td><a href="core.html#errordocument">ErrorDocument <var>hata-kodu</var> <var>belge</var></a></td><td></td><td>skdh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Bir hata durumunda sunucunun istemciye ne döndüreceğini
+<tr><td><a href="core.html#errordocument">ErrorDocument <var>hata-kodu</var> <var>belge</var></a></td><td></td><td>skdh</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Bir hata durumunda sunucunun istemciye ne döndüreceğini
   belirler.</td></tr>
-<tr><td><a href="core.html#errorlog"> ErrorLog <var>dosya-yolu</var>|syslog[:<var>oluşum</var>]</a></td><td> logs/error_log (Uni +</td><td>sk</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Sunucunun hata günlüğünü tutacağı yeri belirler.</td></tr>
-<tr class="odd"><td><a href="mod_example.html#example">Example</a></td><td></td><td>skdh</td><td>D</td></tr><tr class="odd"><td class="descr" colspan="4">Demonstration directive to illustrate the Apache module
+<tr class="odd"><td><a href="core.html#errorlog"> ErrorLog <var>dosya-yolu</var>|syslog[:<var>oluşum</var>]</a></td><td> logs/error_log (Uni +</td><td>sk</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Sunucunun hata günlüğünü tutacağı yeri belirler.</td></tr>
+<tr><td><a href="mod_example.html#example">Example</a></td><td></td><td>skdh</td><td>D</td></tr><tr><td class="descr" colspan="4">Demonstration directive to illustrate the Apache module
 API</td></tr>
-<tr><td><a href="mod_expires.html#expiresactive">ExpiresActive On|Off</a></td><td></td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">Enables generation of <code>Expires</code>
+<tr class="odd"><td><a href="mod_expires.html#expiresactive">ExpiresActive On|Off</a></td><td></td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Enables generation of <code>Expires</code>
 headers</td></tr>
-<tr class="odd"><td><a href="mod_expires.html#expiresbytype">ExpiresByType <var>MIME-type</var>
-<var>&lt;code&gt;seconds</var></a></td><td></td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Value of the <code>Expires</code> header configured
+<tr><td><a href="mod_expires.html#expiresbytype">ExpiresByType <var>MIME-type</var>
+<var>&lt;code&gt;seconds</var></a></td><td></td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">Value of the <code>Expires</code> header configured
 by MIME type</td></tr>
-<tr><td><a href="mod_expires.html#expiresdefault">ExpiresDefault <var>&lt;code&gt;seconds</var></a></td><td></td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">Default algorithm for calculating expiration time</td></tr>
-<tr class="odd"><td><a href="mod_status.html#extendedstatus">ExtendedStatus On|Off</a></td><td> Off </td><td>s</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Her istekte ek durum bilgisinin toplanmasını sağlar.
+<tr class="odd"><td><a href="mod_expires.html#expiresdefault">ExpiresDefault <var>&lt;code&gt;seconds</var></a></td><td></td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Default algorithm for calculating expiration time</td></tr>
+<tr><td><a href="mod_status.html#extendedstatus">ExtendedStatus On|Off</a></td><td> Off </td><td>s</td><td>T</td></tr><tr><td class="descr" colspan="4">Her istekte ek durum bilgisinin toplanmasını sağlar.
 </td></tr>
-<tr><td><a href="mod_ext_filter.html#extfilterdefine">ExtFilterDefine <var>filtername</var> <var>parameters</var></a></td><td></td><td>s</td><td>E</td></tr><tr><td class="descr" colspan="4">Define an external filter</td></tr>
-<tr class="odd"><td><a href="mod_ext_filter.html#extfilteroptions">ExtFilterOptions <var>option</var> [<var>option</var>] ...</a></td><td> DebugLevel=0 NoLogS +</td><td>d</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Configure <code class="module"><a href="../mod/mod_ext_filter.html">mod_ext_filter</a></code> options</td></tr>
-<tr><td><a href="core.html#fileetag" id="F" name="F">FileETag <var>bileşen</var> ...</a></td><td> INode MTime Size </td><td>skdh</td><td>Ç</td></tr><tr><td class="descr" colspan="4"><code>ETag</code> HTTP yanıt başlığını oluşturmakta kullanılacak
+<tr class="odd"><td><a href="mod_ext_filter.html#extfilterdefine">ExtFilterDefine <var>filtername</var> <var>parameters</var></a></td><td></td><td>s</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Define an external filter</td></tr>
+<tr><td><a href="mod_ext_filter.html#extfilteroptions">ExtFilterOptions <var>option</var> [<var>option</var>] ...</a></td><td> DebugLevel=0 NoLogS +</td><td>d</td><td>E</td></tr><tr><td class="descr" colspan="4">Configure <code class="module"><a href="../mod/mod_ext_filter.html">mod_ext_filter</a></code> options</td></tr>
+<tr class="odd"><td><a href="core.html#fileetag" id="F" name="F">FileETag <var>bileşen</var> ...</a></td><td> INode MTime Size </td><td>skdh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4"><code>ETag</code> HTTP yanıt başlığını oluşturmakta kullanılacak
   dosya özniteliklerini belirler.</td></tr>
-<tr class="odd"><td><a href="core.html#files">&lt;Files <var>dosya-adı</var>&gt; ... &lt;/Files&gt;</a></td><td></td><td>skdh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Dosya isimleriyle eşleşme halinde uygulanacak yönergeleri
+<tr><td><a href="core.html#files">&lt;Files <var>dosya-adı</var>&gt; ... &lt;/Files&gt;</a></td><td></td><td>skdh</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Dosya isimleriyle eşleşme halinde uygulanacak yönergeleri
   içerir.</td></tr>
-<tr><td><a href="core.html#filesmatch">&lt;FilesMatch <var>düzifd</var>&gt; ... &lt;/FilesMatch&gt;</a></td><td></td><td>skdh</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Düzenli ifadelerin dosya isimleriyle eşleşmesi halinde
+<tr class="odd"><td><a href="core.html#filesmatch">&lt;FilesMatch <var>düzifd</var>&gt; ... &lt;/FilesMatch&gt;</a></td><td></td><td>skdh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Düzenli ifadelerin dosya isimleriyle eşleşmesi halinde
   uygulanacak yönergeleri içerir.</td></tr>
-<tr class="odd"><td><a href="mod_filter.html#filterchain">FilterChain [+=-@!]<var>filter-name</var> <var>...</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Configure the filter chain</td></tr>
-<tr><td><a href="mod_filter.html#filterdeclare">FilterDeclare <var>filter-name</var> <var>[type]</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Declare a smart filter</td></tr>
-<tr class="odd"><td><a href="mod_filter.html#filterprotocol">FilterProtocol <var>filter-name</var> [<var>provider-name</var>]
-    <var>proto-flags</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Deal with correct HTTP protocol handling</td></tr>
-<tr><td><a href="mod_filter.html#filterprovider">FilterProvider <var>filter-name</var> <var>provider-name</var>
- [req|resp|env]=<var>dispatch</var> <var>match</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Register a content filter</td></tr>
-<tr class="odd"><td><a href="mod_filter.html#filtertrace">FilterTrace <var>filter-name</var> <var>level</var></a></td><td></td><td>skd</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Get debug/diagnostic information from
+<tr><td><a href="mod_filter.html#filterchain">FilterChain [+=-@!]<var>filter-name</var> <var>...</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Configure the filter chain</td></tr>
+<tr class="odd"><td><a href="mod_filter.html#filterdeclare">FilterDeclare <var>filter-name</var> <var>[type]</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Declare a smart filter</td></tr>
+<tr><td><a href="mod_filter.html#filterprotocol">FilterProtocol <var>filter-name</var> [<var>provider-name</var>]
+    <var>proto-flags</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Deal with correct HTTP protocol handling</td></tr>
+<tr class="odd"><td><a href="mod_filter.html#filterprovider">FilterProvider <var>filter-name</var> <var>provider-name</var>
+ [req|resp|env]=<var>dispatch</var> <var>match</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Register a content filter</td></tr>
+<tr><td><a href="mod_filter.html#filtertrace">FilterTrace <var>filter-name</var> <var>level</var></a></td><td></td><td>skd</td><td>T</td></tr><tr><td class="descr" colspan="4">Get debug/diagnostic information from
     <code class="module"><a href="../mod/mod_filter.html">mod_filter</a></code></td></tr>
-<tr><td><a href="mod_negotiation.html#forcelanguagepriority">ForceLanguagePriority None|Prefer|Fallback [Prefer|Fallback]</a></td><td> Prefer </td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Action to take if a single acceptable document is not 
+<tr class="odd"><td><a href="mod_negotiation.html#forcelanguagepriority">ForceLanguagePriority None|Prefer|Fallback [Prefer|Fallback]</a></td><td> Prefer </td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Action to take if a single acceptable document is not 
 found</td></tr>
-<tr class="odd"><td><a href="core.html#forcetype">ForceType <var>MIME-türü</var>|None</a></td><td></td><td>dh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Bütün dosyaların belirtilen MIME içerik türüyle sunulmasına
+<tr><td><a href="core.html#forcetype">ForceType <var>MIME-türü</var>|None</a></td><td></td><td>dh</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Bütün dosyaların belirtilen MIME içerik türüyle sunulmasına
   sebep olur.</td></tr>
-<tr><td><a href="mod_log_forensic.html#forensiclog">ForensicLog <var>dosya-adı</var>|<var>borulu-süreç</var></a></td><td></td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Adli günlük için dosya ismini belirler.</td></tr>
-<tr class="odd"><td><a href="mpm_common.html#gracefulshutdowntimeout" id="G" name="G">GracefulShutDownTimeout <var>saniye</var></a></td><td></td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">Sunucunun nazikçe kapatılmasının ardından ana süreç çıkana kadar
+<tr class="odd"><td><a href="mod_log_forensic.html#forensiclog">ForensicLog <var>dosya-adı</var>|<var>borulu-süreç</var></a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Adli günlük için dosya ismini belirler.</td></tr>
+<tr><td><a href="mpm_common.html#gracefulshutdowntimeout" id="G" name="G">GracefulShutDownTimeout <var>saniye</var></a></td><td></td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Sunucunun nazikçe kapatılmasının ardından ana süreç çıkana kadar
   geçecek süre için bir zaman aşımı belirler.</td></tr>
-<tr><td><a href="mpm_common.html#group">Group <var>unix-grubu</var></a></td><td> #-1 </td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">İsteklere yanıt verecek sunucunun ait olacağı grubu belirler.</td></tr>
-<tr class="odd"><td><a href="mod_headers.html#header" id="H" name="H">Header [<var>condition</var>] set|append|merge|add|unset|echo|edit
-<var>header</var> [<var>value</var>] [early|env=[!]<var>variable</var>]</a></td><td></td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Configure HTTP response headers</td></tr>
-<tr><td><a href="mod_autoindex.html#headername">HeaderName <var>dosya-ismi</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Dizin listesinin tepesine yerleştirilecek dosyanın ismini
+<tr class="odd"><td><a href="mpm_common.html#group">Group <var>unix-grubu</var></a></td><td> #-1 </td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">İsteklere yanıt verecek sunucunun ait olacağı grubu belirler.</td></tr>
+<tr><td><a href="mod_headers.html#header" id="H" name="H">Header [<var>condition</var>] set|append|merge|add|unset|echo|edit
+<var>header</var> [<var>value</var>] [early|env=[!]<var>variable</var>]</a></td><td></td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">Configure HTTP response headers</td></tr>
+<tr class="odd"><td><a href="mod_autoindex.html#headername">HeaderName <var>dosya-ismi</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Dizin listesinin tepesine yerleştirilecek dosyanın ismini
 belirler.</td></tr>
-<tr class="odd"><td><a href="core.html#hostnamelookups">HostnameLookups On|Off|Double</a></td><td> Off </td><td>skd</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">İstemci IP adresleri üzerinde DNS sorgularını etkin kılar.
+<tr><td><a href="core.html#hostnamelookups">HostnameLookups On|Off|Double</a></td><td> Off </td><td>skd</td><td>Ç</td></tr><tr><td class="descr" colspan="4">İstemci IP adresleri üzerinde DNS sorgularını etkin kılar.
 </td></tr>
-<tr><td><a href="mod_ident.html#identitycheck" id="I" name="I">IdentityCheck On|Off</a></td><td> Off </td><td>skd</td><td>E</td></tr><tr><td class="descr" colspan="4">Enables logging of the RFC 1413 identity of the remote
+<tr class="odd"><td><a href="mod_ident.html#identitycheck" id="I" name="I">IdentityCheck On|Off</a></td><td> Off </td><td>skd</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Enables logging of the RFC 1413 identity of the remote
 user</td></tr>
-<tr class="odd"><td><a href="mod_ident.html#identitychecktimeout">IdentityCheckTimeout <var>seconds</var></a></td><td> 30 </td><td>skd</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Determines the timeout duration for ident requests</td></tr>
-<tr><td><a href="core.html#ifdefine">&lt;IfDefine [!]<var>parametre-adı</var>&gt; ...
-    &lt;/IfDefine&gt;</a></td><td></td><td>skdh</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Başlatma sırasında bir doğruluk sınamasından sonra işleme
+<tr><td><a href="mod_ident.html#identitychecktimeout">IdentityCheckTimeout <var>seconds</var></a></td><td> 30 </td><td>skd</td><td>E</td></tr><tr><td class="descr" colspan="4">Determines the timeout duration for ident requests</td></tr>
+<tr class="odd"><td><a href="core.html#ifdefine">&lt;IfDefine [!]<var>parametre-adı</var>&gt; ...
+    &lt;/IfDefine&gt;</a></td><td></td><td>skdh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Başlatma sırasında bir doğruluk sınamasından sonra işleme
 sokulacak yönergeleri sarmalar.</td></tr>
-<tr class="odd"><td><a href="core.html#ifmodule">&lt;IfModule [!]<var>modül-dosyası</var>|<var>modül-betimleyici</var>&gt; ...
-    &lt;/IfModule&gt;</a></td><td></td><td>skdh</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Belli bir modülün varlığına veya yokluğuna göre işleme sokulacak
+<tr><td><a href="core.html#ifmodule">&lt;IfModule [!]<var>modül-dosyası</var>|<var>modül-betimleyici</var>&gt; ...
+    &lt;/IfModule&gt;</a></td><td></td><td>skdh</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Belli bir modülün varlığına veya yokluğuna göre işleme sokulacak
 yönergeleri sarmalar.</td></tr>
-<tr><td><a href="mod_version.html#ifversion">&lt;IfVersion [[!]<var>operator</var>] <var>version</var>&gt; ...
-&lt;/IfVersion&gt;</a></td><td></td><td>skdh</td><td>E</td></tr><tr><td class="descr" colspan="4">contains version dependent configuration</td></tr>
-<tr class="odd"><td><a href="mod_imagemap.html#imapbase">ImapBase map|referer|<var>URL</var></a></td><td> http://servername/ </td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Default <code>base</code> for imagemap files</td></tr>
-<tr><td><a href="mod_imagemap.html#imapdefault">ImapDefault error|nocontent|map|referer|<var>URL</var></a></td><td> nocontent </td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Default action when an imagemap is called with coordinates
+<tr class="odd"><td><a href="mod_version.html#ifversion">&lt;IfVersion [[!]<var>operator</var>] <var>version</var>&gt; ...
+&lt;/IfVersion&gt;</a></td><td></td><td>skdh</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">contains version dependent configuration</td></tr>
+<tr><td><a href="mod_imagemap.html#imapbase">ImapBase map|referer|<var>URL</var></a></td><td> http://servername/ </td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Default <code>base</code> for imagemap files</td></tr>
+<tr class="odd"><td><a href="mod_imagemap.html#imapdefault">ImapDefault error|nocontent|map|referer|<var>URL</var></a></td><td> nocontent </td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Default action when an imagemap is called with coordinates
 that are not explicitly mapped</td></tr>
-<tr class="odd"><td><a href="mod_imagemap.html#imapmenu">ImapMenu none|formatted|semiformatted|unformatted</a></td><td></td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Action if no coordinates are given when calling
+<tr><td><a href="mod_imagemap.html#imapmenu">ImapMenu none|formatted|semiformatted|unformatted</a></td><td></td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Action if no coordinates are given when calling
 an imagemap</td></tr>
-<tr><td><a href="core.html#include">Include <var>dosya-yolu</var>|<var>dizin-yolu</var></a></td><td></td><td>skd</td><td>Ç</td></tr><tr><td class="descr" colspan="4">Sunucu yapılandırma dosyalarının başka dosyaları içermesini sağlar.
+<tr class="odd"><td><a href="core.html#include">Include <var>dosya-yolu</var>|<var>dizin-yolu</var></a></td><td></td><td>skd</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Sunucu yapılandırma dosyalarının başka dosyaları içermesini sağlar.
 </td></tr>
+<tr><td><a href="mod_autoindex.html#indexheadinsert">IndexHeadInsert <var>"imlenim ..."</var></a></td><td></td><td>skdh</td><td>T</td></tr><tr><td class="descr" colspan="4">Bir dizin sayfasının HEAD bölümüne metin yerleştirir.</td></tr>
 <tr class="odd"><td><a href="mod_autoindex.html#indexignore">IndexIgnore <var>dosya</var> [<var>dosya</var>] ...</a></td><td></td><td>skdh</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Dizin içerik listesinden gizlenecek dosyaların listesi belirtilir.
 </td></tr>
 <tr><td><a href="mod_autoindex.html#indexoptions">IndexOptions  [+|-]<var>seçenek</var> [[+|-]<var>seçenek</var>]
@@ -444,7 +447,7 @@ uygulanır.</td></tr>
 [<var>takma-ad</var>]</a></td><td> "%h %l %u %t \"%r\" +</td><td>sk</td><td>T</td></tr><tr><td class="descr" colspan="4">Bir günlük dosyasında kullanılmak üzere girdi biçemi tanımlar.
 </td></tr>
 <tr class="odd"><td><a href="core.html#loglevel">LogLevel <var>seviye</var></a></td><td> warn </td><td>sk</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Hata günlüklerinin ayrıntı seviyesini belirler.</td></tr>
-<tr><td><a href="mpm_common.html#maxclients" id="M" name="M">MaxClients <var>sayı</var></a></td><td></td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Aynı anda sunulacak azami istek sayısı</td></tr>
+<tr><td><a href="mpm_common.html#maxclients" id="M" name="M">MaxClients <var>sayı</var></a></td><td></td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Aynı anda işleme sokulacak azami bağlantı sayısı</td></tr>
 <tr class="odd"><td><a href="core.html#maxkeepaliverequests">MaxKeepAliveRequests <var>sayı</var></a></td><td> 100 </td><td>sk</td><td>Ç</td></tr><tr class="odd"><td class="descr" colspan="4">Bir kalıcı bağlantıda izin verilen istek sayısı</td></tr>
 <tr><td><a href="mpm_common.html#maxmemfree">MaxMemFree <var>kB-sayısı</var></a></td><td> 0 </td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4"><code>free()</code> çağrılmaksızın ana bellek ayırıcının
   ayırmasına izin verilen azami bellek miktarını belirler.</td></tr>
@@ -452,7 +455,7 @@ uygulanır.</td></tr>
   sayısını sınırlamakta kullanılır.</td></tr>
 <tr><td><a href="beos.html#maxrequestsperthread">MaxRequestsPerThread <var>number</var></a></td><td> 0 </td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Limit on the number of requests that an individual thread
 will handle during its life</td></tr>
-<tr class="odd"><td><a href="prefork.html#maxspareservers">MaxSpareServers <var>number</var></a></td><td> 10 </td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">Maximum number of idle child server processes</td></tr>
+<tr class="odd"><td><a href="prefork.html#maxspareservers">MaxSpareServers <var>sayı</var></a></td><td> 10 </td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">Boştaki çocuk süreçlerin azami sayısı</td></tr>
 <tr><td><a href="mpm_common.html#maxsparethreads">MaxSpareThreads <var>number</var></a></td><td></td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Boştaki azami evre sayısını belirler</td></tr>
 <tr class="odd"><td><a href="mpm_netware.html#maxthreads">MaxThreads <var>number</var></a></td><td> 2048 </td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">Set the maximum number of worker threads</td></tr>
 <tr><td><a href="mod_mem_cache.html#mcachemaxobjectcount">MCacheMaxObjectCount <var>value</var></a></td><td> 1009 </td><td>s</td><td>E</td></tr><tr><td class="descr" colspan="4">The maximum number of objects allowed to be placed in the
@@ -474,7 +477,7 @@ files</td></tr>
 meta information</td></tr>
 <tr class="odd"><td><a href="mod_mime_magic.html#mimemagicfile">MimeMagicFile <var>file-path</var></a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Enable MIME-type determination based on file contents
 using the specified magic file</td></tr>
-<tr><td><a href="prefork.html#minspareservers">MinSpareServers <var>number</var></a></td><td> 5 </td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Minimum number of idle child server processes</td></tr>
+<tr><td><a href="prefork.html#minspareservers">MinSpareServers <var>sayı</var></a></td><td> 5 </td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Boştaki çocuk süreçlerin asgari sayısı</td></tr>
 <tr class="odd"><td><a href="mpm_common.html#minsparethreads">MinSpareThreads <var>sayı</var></a></td><td></td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">İsteklerin ani artışında devreye girecek boştaki evrelerin asgari
   sayısını belirler.</td></tr>
 <tr><td><a href="mod_file_cache.html#mmapfile">MMapFile <var>file-path</var> [<var>file-path</var>] ...</a></td><td></td><td>s</td><td>D</td></tr><tr><td class="descr" colspan="4">Map a list of files into memory at startup time</td></tr>
@@ -721,7 +724,8 @@ Certificate verification</td></tr>
 <tr class="odd"><td><a href="mpm_common.html#startthreads">StartThreads <var>sayı</var></a></td><td></td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">Sunucunun başlatılması sırasında oluşturulan evrelerin sayısını
   belirler.</td></tr>
 <tr><td><a href="mod_substitute.html#substitute">Substitute <var>s/pattern/substitution/[infq]</var></a></td><td></td><td>dh</td><td>E</td></tr><tr><td class="descr" colspan="4">Pattern to filter the response content</td></tr>
-<tr class="odd"><td><a href="mod_suexec.html#suexecusergroup">SuexecUserGroup <em>User Group</em></a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">User and group for CGI programs to run as</td></tr>
+<tr class="odd"><td><a href="mod_suexec.html#suexecusergroup">SuexecUserGroup <em>Kullanıcı Grup</em></a></td><td></td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">CGI betiklerini çalıştıracak kullanıcı ve grup belirtilir.
+</td></tr>
 <tr><td><a href="mpm_common.html#threadlimit" id="T" name="T">ThreadLimit <var>sayı</var></a></td><td></td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">Çocuk süreç başına ayarlanabilir evre sayısının üst sınırını
   belirler.</td></tr>
 <tr class="odd"><td><a href="mpm_common.html#threadsperchild">ThreadsPerChild <var>sayı</var></a></td><td></td><td>s</td><td>M</td></tr><tr class="odd"><td class="descr" colspan="4">Her çocuk süreç tarafından oluşturulan evrelerin sayısını
@@ -743,8 +747,7 @@ gerçekleşmesi için sunucunun geçmesini bekleyeceği süre.</td></tr>
 </td></tr>
 <tr><td><a href="mpm_common.html#user">User <var>unix-kullanıcısı</var></a></td><td> #-1 </td><td>s</td><td>M</td></tr><tr><td class="descr" colspan="4">İsteklere yanıt verecek sunucunun ait olacağı kullanıcıyı
   belirler.</td></tr>
-<tr class="odd"><td><a href="mod_userdir.html#userdir">UserDir <em>directory-filename</em> [<em>directory-filename</em>] ...
-</a></td><td></td><td>sk</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Location of the user-specific directories</td></tr>
+<tr class="odd"><td><a href="mod_userdir.html#userdir">UserDir <em>dizin</em> [<em>dizin</em>] ...</a></td><td></td><td>sk</td><td>T</td></tr><tr class="odd"><td class="descr" colspan="4">Kullanıcıya özel dizinlerin yeri</td></tr>
 <tr><td><a href="mod_vhost_alias.html#virtualdocumentroot" id="V" name="V">VirtualDocumentRoot <em>hesaplanan-dizin</em>|none</a></td><td> none </td><td>sk</td><td>E</td></tr><tr><td class="descr" colspan="4">Bir sanal konağın belge kök dizinini devingen olarak yapılandırır.
 </td></tr>
 <tr class="odd"><td><a href="mod_vhost_alias.html#virtualdocumentrootip">VirtualDocumentRootIP <em>hesaplanan-dizin</em>|none</a></td><td> none </td><td>sk</td><td>E</td></tr><tr class="odd"><td class="descr" colspan="4">Bir sanal konağın belge kök dizinini devingen olarak yapılandırır.

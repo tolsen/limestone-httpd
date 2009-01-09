@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 678114 $ -->
+<!-- $LastChangedRevision: 721731 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -933,6 +933,26 @@ Name|Date|Size|Description</syntax>
     <example>
       <title>Example</title>
       IndexStyleSheet "/css/style.css"
+    </example>
+</usage>
+</directivesynopsis>
+
+<directivesynopsis>
+<name>IndexHeadInsert</name>
+<description>Inserts text in the HEAD section of an index page.</description>
+<syntax>IndexHeadInsert <var>"markup ..."</var></syntax>
+<contextlist><context>server config</context><context>virtual host</context>
+<context>directory</context><context>.htaccess</context>
+</contextlist>
+<override>Indexes</override>
+
+<usage>
+    <p>The <directive>IndexHeadInsert</directive> directive specifies a
+    string to insert in the <var>&lt;head&gt;</var> section of the HTML
+    generated for the index page.</p>
+    <example>
+      <title>Example</title>
+      IndexHeadInsert "&lt;link rel=\"sitemap\" href=\"/sitemap.html\"&gt;"
     </example>
 </usage>
 </directivesynopsis>

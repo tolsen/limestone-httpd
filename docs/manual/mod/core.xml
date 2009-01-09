@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 669869 $ -->
+<!-- $LastChangedRevision: 722534 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -461,6 +461,14 @@ be passed through</description>
     <p>In the example above all directives that are neither in the group
     <code>AuthConfig</code> nor <code>Indexes</code> cause an internal
     server error.</p>
+
+    <note><p>For security and performance reasons, do not set
+    <code>AllowOverride</code> to anything other than <code>None</code> 
+    in your <code>&lt;Directory /&gt;</code> block. Instead, find (or
+    create) the <code>&lt;Directory&gt;</code> block that refers to the
+    directory where you're actually planning to place a
+    <code>.htaccess</code> file.</p>
+    </note>
 </usage>
 
 <seealso><directive module="core">AccessFileName</directive></seealso>
@@ -2850,7 +2858,7 @@ itself</description>
 
     <p>See the description of the
     <directive module="core">UseCanonicalName</directive> and
-    <directive module="core">UseCanonicalPhysicalPort</directive>directives for
+    <directive module="core">UseCanonicalPhysicalPort</directive> directives for
     settings which determine whether self-referential URLs (e.g., by the
     <module>mod_dir</module> module) will refer to the
     specified port, or to the port number given in the client's request.

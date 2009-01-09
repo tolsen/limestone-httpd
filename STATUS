@@ -1,5 +1,5 @@
 APACHE 2.2 STATUS:                                              -*-text-*-
-Last modified at [$Date: 2008-10-07 11:20:24 -0400 (Tue, 07 Oct 2008) $]
+Last modified at [$Date: 2008-12-06 10:11:00 -0500 (Sat, 06 Dec 2008) $]
 
 The current version of this file can be found at:
 
@@ -26,7 +26,8 @@ Release history:
     [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
           while x.{even}.z versions are Stable/GA releases.]
 
-    2.2.10  : Tagged October 7, 2008.
+    2.2.11  : Tagged December 6, 2008.
+    2.2.10  : Released October 14, 2008.
     2.2.9   : Released June 14, 2008.
     2.2.8   : Released January 19, 2008.
     2.2.7   : Tagged January 4, 2008. Not released.
@@ -84,9 +85,10 @@ RELEASE SHOWSTOPPERS:
 PATCHES ACCEPTED TO BACKPORT FROM TRUNK:
   [ start all new proposals below, under PATCHES PROPOSED. ]
 
-
 PATCHES PROPOSED TO BACKPORT FROM TRUNK:
   [ New proposals should be added at the end of the list ]
+
+PATCHES/ISSUES THAT ARE STALLED
 
    * mod_ssl: Add server name indication (RFC 4366) support (PR 34607).
       Trunk version of patches:
@@ -105,8 +107,47 @@ PATCHES PROPOSED TO BACKPORT FROM TRUNK:
           third party module authors.
       -1: rpluem: jorton found some problems with the trunk version and they
                   should be fixed / discussed in trunk before we backport.
+          pquerna: Until issues for this feature are fixed in trunk, we can not
+                   backport it.
 
-PATCHES/ISSUES THAT ARE STALLED
+
+  * srclib/pcre and vendor/pcre
+    http://www.vuxml.org/freebsd/pkg-pcre.html
+
+    update to pcre-7.8
+    +1: pgollucci, pquerna
+    -0: covener: Don't We get a pass on some of these issues for building 
+                 without UTF-8 support and/or not having ever moved past 5.x?
+                 It's not always crisp from the advisories. I'd hate to jump 
+                 up to 7.8 and pick up unknown exposures from an expanding
+                 codebase.
+        pquerna says: We can't protect ourselves from our dependencies by _not_ 
+            upgrading -- the best policy IMO is to follow them, 5.x is not going
+            to be maintained.
+    +0
+    -1: niq: since pcre just got deleted from trunk, this isn't even
+             a backport being proposed.  It's an untested change over
+             their major versions, when we promise binary-compatibility!
+             If we're in the business of untested changes, then make
+             the sane one and just stop bundling it altogether.
+    -1: rpluem: Agree with niq on binary compatibility argument. But IMHO
+                unbundling it is also not possible with 2.2.x for the
+                same reason. IMHO this has to wait until 2.4.
+    -1: sctemme: This is one of the perils of bundling, but IMHO for 2.2.x
+                 we're stuck with it.  And if that starts inheriting us 
+                 security issues that we can't fix, all the more reason 
+                 to retire the branch.
+
+    pgollucci volunteers
+
+    pgollucci replies: known to work on freebsd see the WITH_PCRE_FROM_PORTS
+                       option in www/apache22.
+
+    backport/merge 5.0v7.8 into vendor/pcre/current
+    +1 
+    -0
+    +0
+    -1: pgollucci
 
  * core, authn/z: Avoid calling access control hooks for internal requests
    with configurations which match those of initial request.  Revert to

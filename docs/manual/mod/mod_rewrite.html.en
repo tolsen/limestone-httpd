@@ -215,7 +215,9 @@ Result:
               correct Apache internal processing. Because the
               per-directory rewriting comes late in the
               process, the rewritten request
-              has to be re-injected into the Apache kernel. 
+              has to be re-injected into the Apache kernel, as if it
+              were a new request. (See <a href="../rewrite/rewrite_tech.html">mod_rewrite technical
+              details</a>.)
               This is not the serious overhead it may seem to be - 
               this re-injection is completely internal to the 
 	      Apache server (and the same procedure is used by 
@@ -674,6 +676,11 @@ RewriteRule  ^/$                 /homepage.std.html  [L]
       <code>RewriteEngine on</code> directive for each virtual host
       in which you wish to use rewrite rules.</p>
 
+      <p><code class="directive">RewriteMap</code> directives of the type <code>prg</code>
+      are not started during server initialization if they're defined in a
+      context that does not have <code class="directive">RewriteEngine</code>  set to
+      <code>on</code></p>
+
 </div>
 <div class="top"><a href="#page-header"><img alt="top" src="../images/up.gif" /></a></div>
 <div class="directive-section"><h2><a name="RewriteLock" id="RewriteLock">RewriteLock</a> <a name="rewritelock" id="rewritelock">Directive</a></h2>
@@ -959,6 +966,10 @@ $ httxt2dbm -i mapfile.txt -o mapfile.map
           is no corresponding value for the given key). A trivial
           program which will implement a 1:1 map (<em>i.e.</em>,
           key == value) could be:</p>
+
+          <p>External rewriting programs are not started if they're defined in a
+          context that does not have <code class="directive">RewriteEngine</code> set to
+          <code>on</code></p>.
 
 <div class="example"><pre>
 #!/usr/bin/perl
