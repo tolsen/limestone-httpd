@@ -1247,7 +1247,7 @@ static int dav_method_put(dav_request *dav_r)
     /* Create the new file in the repository */
     if ((err = (*resource->hooks->open_stream)(resource, mode,
                                                &stream)) != NULL) {
-        return dav_handle_err(r, err, NULL);
+        goto error;
     }
 
     if (err == NULL && has_range) {
@@ -1332,7 +1332,7 @@ static int dav_method_put(dav_request *dav_r)
 
     /* check for errors now */
     if (err != NULL) {
-        return dav_handle_err(r, err, NULL);
+        goto error;
     }
 
     if (err2 != NULL) {
@@ -1358,7 +1358,7 @@ static int dav_method_put(dav_request *dav_r)
                                  "which prevents inheriting locks from the "
                                  "parent resources.",
                                  err);
-            return dav_handle_err(r, err, NULL);
+            goto error;
         }
 
         /* notify lock system that we have created/replaced a resource */
@@ -1373,7 +1373,7 @@ static int dav_method_put(dav_request *dav_r)
                                  "was a problem updating its lock "
                                  "information.",
                                  err);
-            return dav_handle_err(r, err, NULL);
+            goto error;
         }
     }
     
@@ -1382,7 +1382,7 @@ static int dav_method_put(dav_request *dav_r)
         err = dav_push_error(r->pool, err->status, 0,
                              "Unable to set up HTTP headers.",
                              err);
-        return dav_handle_err(r, err, NULL);
+        goto error;
     }
 
     /* end transaction here, if one was started */
@@ -1394,6 +1394,14 @@ static int dav_method_put(dav_request *dav_r)
 
     /* return an appropriate response (HTTP_CREATED or HTTP_NO_CONTENT) */
     return dav_created(r, NULL, "Resource", resource_state == DAV_RESOURCE_EXISTS);
+
+ error:
+    if (dav_r->trans) {
+        const dav_hooks_transaction *xaction_hooks = dav_get_transaction_hooks(r);
+        xaction_hooks->mode_set(dav_r->trans, DAV_TRANSACTION_ROLLBACK);
+    }
+
+    return dav_handle_err(r, err, NULL);
 }
 
 static int dav_is_allow_method_put(dav_request *dav_r, 
