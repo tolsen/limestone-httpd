@@ -1892,6 +1892,9 @@ DAV_DECLARE(dav_error *) dav_auto_checkout(
     if (resource->versioned && !resource->working) {
         int checkout_resource;
 
+        if (av_info->resource_versioned == 1)
+            checkout_resource = 1;
+        else
         if ((err = dav_can_auto_checkout(r, resource,
                                          (*vsn_hooks->auto_versionable)(resource),
                                          &lockdb, &checkout_resource)) != NULL) {
@@ -2006,6 +2009,7 @@ DAV_DECLARE(dav_error *) dav_auto_checkin(
         auto_version = (*vsn_hooks->auto_versionable)(resource);
 
         if (auto_version == DAV_AUTO_VERSION_ALWAYS ||
+            (av_info && av_info->resource_versioned) ||
             (unlock && (auto_version == DAV_AUTO_VERSION_LOCKED))) {
 
             if ((err = (*vsn_hooks->checkin)(resource,
