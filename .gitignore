@@ -90,3 +90,4 @@ support/logresolve.pl
 support/phf_abuse_log.cgi
 support/rotatelogs
 support/split-logfile
+.lime-config-generated.mk
