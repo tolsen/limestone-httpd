@@ -621,7 +621,7 @@ const char *dav_get_response_href(request_rec *r, const char *uri)
 
             if (match) {
                 rule_regex = ap_pregcomp(r->pool, rule_i.lhs, 0);
-                if(!ap_regexec(rule_regex, uri, nmatch, pmatch, 0)) {
+                if(!ap_regexec(rule_regex, result_uri, nmatch, pmatch, 0)) {
                     /* uri matches the rule lhs, rewrite uri to rhs */
                     result_uri = ap_pregsub(r->pool, rule_i.rhs, result_uri, 
                                             nmatch, pmatch);
