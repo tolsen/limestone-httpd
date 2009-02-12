@@ -6156,7 +6156,7 @@ static int dav_method_bind(dav_request *dav_r)
     }
     
     /* get the destination URI */
-    dest = apr_psprintf(r->pool, "%s/%s", r->unparsed_uri, segment_str);
+    dest = apr_psprintf(r->pool, "%s/%s?no_rewrite", r->uri, segment_str);
     err = dav_get_resource_from_uri(dest, r, 0, 
                                     &binding_rec, &binding);
     if (err) dav_handle_err(r, err, NULL);
