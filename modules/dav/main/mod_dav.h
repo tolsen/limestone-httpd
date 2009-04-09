@@ -2589,6 +2589,7 @@ typedef struct _dav_property dav_property;
 **
 ** ACL FUNCTIONS
 */
+typedef struct _dav_principal dav_principal;
 struct _dav_principal {
     enum { 
         PRINCIPAL_ALL,                  /* DAV:all */
@@ -2597,9 +2598,8 @@ struct _dav_principal {
         PRINCIPAL_HREF                  
     } type;
     dav_resource *resource;     /* resource corresponding to the principal */
+    dav_principal *next;        /* useful if you need to pass a list of prins */
 };
-
-typedef struct _dav_principal dav_principal;
 
 typedef enum {
     DAV_PERMISSION_UNKNOWN = 0,
@@ -2768,6 +2768,10 @@ struct dav_hooks_acl {
      * PRINCIPAL_AUTHENTICATED & PRINCIPAL_UNAUTHENTICATED */
     dav_principal *(*get_prin_by_name)(request_rec *r, const char *username);
 
+    /* For a given list of principals,
+     * check if they have the given permission on the given resource.
+     * return the result for the first principal,
+     * and cache the results for others */
     int (*is_allow)(const dav_principal *principal,
 		    dav_resource *resource,
 		    dav_acl_permission_type permission);

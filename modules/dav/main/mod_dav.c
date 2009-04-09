@@ -1074,6 +1074,15 @@ int dav_query_handler(request_rec *r)
     return DECLINED;
 }
 
+static dav_principal *make_unauth_prin(apr_pool_t *pool, dav_resource *r)
+{
+    dav_principal *unauthenticated = apr_pcalloc(pool, sizeof(dav_principal));
+    unauthenticated->type = PRINCIPAL_UNAUTHENTICATED;
+    unauthenticated->resource = r;
+
+    return unauthenticated;
+}
+
 /* handle the GET method */
 static int dav_method_get(dav_request *dav_r)
 {
@@ -1120,6 +1129,19 @@ static int dav_method_get(dav_request *dav_r)
         return dav_handle_err(r, err, NULL);
     }
 
+    const dav_hooks_acl *acl_hook = dav_get_acl_hooks(r);
+    dav_principal *unauthenticated = make_unauth_prin(r->pool, resource);
+    if (resource->exists && acl_hook != NULL) {
+        if ((*acl_hook->is_allow)(unauthenticated, resource, DAV_PERMISSION_READ)) {
+            /* set Cache-Control: public */
+            apr_table_setn(r->headers_out, "Cache-Control", "public");
+        }
+        else {
+            /* set Cache-Control: private */
+            apr_table_setn(r->headers_out, "Cache-Control", "private");
+        }
+    }
+
     if (r->header_only) {
         return DONE;
     }
@@ -1148,6 +1170,12 @@ static int dav_is_allow_method_get(dav_request *dav_r,
 {
     int retVal = TRUE;
     dav_resource *resource = dav_r->resource;
+    dav_principal *unauthenticated = 
+                        make_unauth_prin(resource->pool, principal->resource);
+
+    /* ask the is_allow hook to cache acl lookup for unauthenticated user,
+       we need it to construct Cache-Control headers */
+    ((dav_principal *)principal)->next = unauthenticated;
 
     if(resource->exists && acl_hook != NULL) 
         retVal = (*acl_hook->is_allow)(principal, resource, 
