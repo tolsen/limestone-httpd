@@ -7292,10 +7292,15 @@ static int dav_handler(request_rec *r)
         /* revert to the original request_rec */
 
         /* if we got a 503, wait a moment, then retry */ 
-        DBG3("Retrying transaction for %s: try(%d) timeout(%d)",
-             r->method, num_tries, timeout);
+        DBG3("dav_handler: Retrying transaction for %s: try(%d) timeout(%d)",
+             apr_table_get(r->subprocess_env, "UNIQUE_ID"), num_tries, timeout);
         apr_sleep(timeout);
         retVal = dav_dispatch_method(r);
+
+        if (retVal != HTTP_SERVICE_UNAVAILABLE) {
+            DBG2("dav_handler: retry %d succeeded for %s", num_tries,
+                 apr_table_get(r->subprocess_env, "UNIQUE_ID"));
+        }
 
         /* exponential back-off */ 	 
         timeout *= 2;
