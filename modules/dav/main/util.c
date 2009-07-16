@@ -1032,7 +1032,8 @@ DAV_DECLARE(dav_error *) dav_validate_bind(request_rec *r,
     ctx.uri_uuid = apr_hash_make(pool);
     ctx.uuid_dinf_lock = apr_hash_make(pool);
 
-    ctx.lock_hooks->get_bind_locks(lockdb, bind, &bind_locks);
+    if (!(flags & DAV_VALIDATE_IGNORE_BIND_LOCKS))
+        ctx.lock_hooks->get_bind_locks(lockdb, bind, &bind_locks);
 
     lr_res_map = apr_hash_make(pool);
     res_ltl_map = apr_hash_make(pool);
@@ -1559,6 +1560,8 @@ DAV_DECLARE(dav_error *) dav_validate_request(request_rec *r,
         err = (*repos_hooks->get_parent_resource)(bind->cur_resource, 
                                                   &bind->collection);
         if (err) return err;
+        if (bind->collection == NULL)
+            bind->collection = bind->cur_resource;
         bind->bind_name = basename(bind->cur_resource->uri);
     }
 

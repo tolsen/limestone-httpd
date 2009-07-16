@@ -2212,6 +2212,14 @@ static int dav_method_acl(dav_request *dav_r)
         return HTTP_BAD_REQUEST;
     }
 
+    dav_bind bind = { 0 };
+    bind.cur_resource = bind.new_resource = resource;
+    int resource_state = dav_get_resource_state(r, resource);
+    err = dav_validate_request
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
+       DAV_VALIDATE_IGNORE_TARGET_LOCKS | DAV_VALIDATE_IGNORE_BIND_LOCKS, resource_state, NULL, NULL, NULL);
+    if (err) return dav_handle_err(r, err, NULL);
+
     new_acl = (*acl_hooks->get_current_acl)(resource);
     if (!new_acl)
     {
@@ -3161,7 +3169,8 @@ static int dav_method_proppatch(dav_request *dav_r)
     resource_state = dav_get_resource_state(r, resource);
     err = dav_validate_request
       (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
-       DAV_VALIDATE_IGNORE_TARGET_LOCKS, resource_state, NULL, NULL, NULL);
+       DAV_VALIDATE_IGNORE_TARGET_LOCKS | DAV_VALIDATE_IGNORE_BIND_LOCKS,
+       resource_state, NULL, NULL, NULL);
     if (err) return dav_handle_err(r, err, NULL);
 
     /* make sure the resource can be modified (if versioning repository) */
