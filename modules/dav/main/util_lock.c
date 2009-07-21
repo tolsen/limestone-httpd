@@ -149,6 +149,13 @@ DAV_DECLARE(const char *) dav_lock_get_activelock(request_rec *r,
         dav_buffer_append(p, pbuf,
                           "</D:href>" DEBUG_CR
                           "</D:locktoken>" DEBUG_CR
+                          "<D:lockroot>" DEBUG_CR
+                          "<D:href>");
+        dav_buffer_append(p, pbuf, dav_get_repos_hooks(r)->
+                          response_href_transform(r, lock->lockroot));
+        dav_buffer_append(p, pbuf,
+                          "</D:href>" DEBUG_CR
+                          "</D:lockroot>" DEBUG_CR
                           "</D:activelock>" DEBUG_CR);
     }
 
