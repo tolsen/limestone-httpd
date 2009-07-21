@@ -4307,7 +4307,7 @@ static int dav_is_allow_method_lock(dav_request *dav_r,
         
 	if (resource->exists)
 	    is_acl_allow = (*acl_hook->is_allow)(principal, resource, 
-                                                 DAV_PERMISSION_WRITE);
+                                                 DAV_PERMISSION_WRITE_CONTENT);
 	else {
 	    const dav_hooks_repository *repos_hooks = resource->hooks;
 	    dav_resource *parent_resource = NULL;
