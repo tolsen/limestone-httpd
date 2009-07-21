@@ -151,8 +151,7 @@ DAV_DECLARE(const char *) dav_lock_get_activelock(request_rec *r,
                           "</D:locktoken>" DEBUG_CR
                           "<D:lockroot>" DEBUG_CR
                           "<D:href>");
-        dav_buffer_append(p, pbuf, dav_get_repos_hooks(r)->
-                          response_href_transform(r, lock->lockroot));
+        dav_buffer_append(p, pbuf, dav_get_response_href(r, lock->lockroot));
         dav_buffer_append(p, pbuf,
                           "</D:href>" DEBUG_CR
                           "</D:lockroot>" DEBUG_CR
@@ -237,7 +236,7 @@ DAV_DECLARE(dav_error *) dav_lock_parse_lockinfo(request_rec *r,
             continue;
         }
 
-        return dav_new_error(p, HTTP_PRECONDITION_FAILED, 0,
+        return dav_new_error(p, HTTP_UNPROCESSABLE_ENTITY, 0,
                              apr_psprintf(p,
                                          "The server cannot satisfy the "
                                          "LOCK request due to an unknown XML "
