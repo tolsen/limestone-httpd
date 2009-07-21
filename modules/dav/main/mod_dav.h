@@ -1404,7 +1404,6 @@ DAV_DECLARE(int) dav_meets_conditions(request_rec *r, int resource_state);
 #define DAV_VALIDATE_IGNORE_TARGET_LOCKS 0x0800 /* used for validating copy w overwrite */
 #define DAV_VALIDATE_NEW_LOCK 0x1000
 #define DAV_VALIDATE_UNLOCK 0x2000
-#define DAV_VALIDATE_IGNORE_BIND_LOCKS 0x4000
 
 /* Lock-null related public lock functions */
 DAV_DECLARE(int) dav_get_resource_state(request_rec *r,

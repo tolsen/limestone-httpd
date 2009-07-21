@@ -1195,8 +1195,7 @@ static int dav_method_post(dav_request *dav_r)
 
     resource_state = dav_get_resource_state(r, resource);
     err = dav_validate_request
-      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
-       DAV_VALIDATE_IGNORE_TARGET_LOCKS, resource_state, NULL, NULL, NULL);
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_RESOURCE, 0, NULL, NULL, NULL);
     if (err) return dav_handle_err(r, err, NULL);
 
     return DECLINED;
@@ -1207,6 +1206,7 @@ static int dav_method_put(dav_request *dav_r)
 {
     request_rec *r = dav_r->request;
     dav_resource *resource = dav_r->resource;
+    dav_resource *parent_resource = dav_r->parent_resource;
     int resource_state;
     dav_auto_version_info av_info;
     const dav_hooks_locks *locks_hooks = DAV_GET_HOOKS_LOCKS(r);
@@ -1245,13 +1245,16 @@ static int dav_method_put(dav_request *dav_r)
 
     }
 
+    if (parent_resource && !parent_resource->exists)
+        return HTTP_CONFLICT;
+
     resource_state = dav_get_resource_state(r, resource);
 
     dav_bind bind = { 0 };
-    bind.cur_resource = bind.new_resource = resource;
+    bind.cur_resource = bind.new_resource =
+      (resource_state == DAV_RESOURCE_NULL) ? parent_resource : resource;
     err = dav_validate_request
-      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
-       DAV_VALIDATE_IGNORE_TARGET_LOCKS, resource_state, NULL, NULL, NULL);
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_RESOURCE, 0, NULL, NULL, NULL);
     if (err) return dav_handle_err(r, err, NULL);
 
     /* make sure the resource can be modified (if versioning repository) */
@@ -1457,6 +1460,7 @@ static int dav_is_allow_method_put(dav_request *dav_r,
 
             err = (*repos_hooks->get_parent_resource)(resource, 
                                                       &parent_resource);
+            dav_r->parent_resource = parent_resource;
 
             if (err == NULL && parent_resource && parent_resource->exists ) {
                 retVal = (*acl_hook->is_allow)(principal, parent_resource, 
@@ -2214,10 +2218,8 @@ static int dav_method_acl(dav_request *dav_r)
 
     dav_bind bind = { 0 };
     bind.cur_resource = bind.new_resource = resource;
-    int resource_state = dav_get_resource_state(r, resource);
     err = dav_validate_request
-      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
-       DAV_VALIDATE_IGNORE_TARGET_LOCKS | DAV_VALIDATE_IGNORE_BIND_LOCKS, resource_state, NULL, NULL, NULL);
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_RESOURCE, 0, NULL, NULL, NULL);
     if (err) return dav_handle_err(r, err, NULL);
 
     new_acl = (*acl_hooks->get_current_acl)(resource);
@@ -3166,11 +3168,8 @@ static int dav_method_proppatch(dav_request *dav_r)
 
     dav_bind bind = { 0 };
     bind.cur_resource = bind.new_resource = resource;
-    resource_state = dav_get_resource_state(r, resource);
     err = dav_validate_request
-      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
-       DAV_VALIDATE_IGNORE_TARGET_LOCKS | DAV_VALIDATE_IGNORE_BIND_LOCKS,
-       resource_state, NULL, NULL, NULL);
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_RESOURCE, 0, NULL, NULL, NULL);
     if (err) return dav_handle_err(r, err, NULL);
 
     /* make sure the resource can be modified (if versioning repository) */
@@ -3338,6 +3337,7 @@ static int dav_method_mkcol(dav_request *dav_r)
 {
     request_rec *r = dav_r->request;
     dav_resource *resource = dav_r->resource;
+    dav_resource *parent_resource = dav_r->parent_resource;
     int resource_state;
     dav_auto_version_info av_info;
     apr_xml_doc *doc = NULL;
@@ -3365,13 +3365,16 @@ static int dav_method_mkcol(dav_request *dav_r)
         return HTTP_METHOD_NOT_ALLOWED;
     }
 
+    if (!parent_resource->exists)
+        return HTTP_CONFLICT;
+
     resource_state = dav_get_resource_state(r, resource);
 
     dav_bind bind = { 0 };
-    bind.cur_resource = bind.new_resource = resource;
+    bind.cur_resource = bind.new_resource =
+      (resource_state == DAV_RESOURCE_NULL) ? parent_resource : resource;
     err = dav_validate_request
-      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
-       DAV_VALIDATE_IGNORE_TARGET_LOCKS, resource_state, NULL, NULL, NULL);
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_RESOURCE, 0, NULL, NULL, NULL);
     if (err) return dav_handle_err(r, err, NULL);
 
     resource->collection = 1;
@@ -3586,9 +3589,9 @@ static int dav_is_allow_method_mkcol(dav_request *dav_r,
 	dav_resource *parent_resource = NULL;
 	
         err = (*repos_hooks->get_parent_resource)(resource, &parent_resource);
+        dav_r->parent_resource = parent_resource;
 	
         if (err == NULL && parent_resource && parent_resource->exists ) {
-            dav_r->parent_resource = parent_resource;
 	    retVal = (*acl_hook->is_allow)(principal, parent_resource, 
                                            DAV_PERMISSION_BIND);
 
@@ -4502,8 +4505,7 @@ static int dav_method_vsn_control(dav_request *dav_r)
     dav_bind bind = { 0 };
     bind.cur_resource = bind.new_resource = resource;
     err = dav_validate_request
-      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_BIND |
-       DAV_VALIDATE_IGNORE_TARGET_LOCKS, resource_state, NULL, NULL, NULL);
+      (r, 0, NULL, &bind, NULL, DAV_VALIDATE_RESOURCE, 0, NULL, NULL, NULL);
     if (err) return dav_handle_err(r, err, NULL);
 
     /* if in versioned collection, make sure parent is checked out */

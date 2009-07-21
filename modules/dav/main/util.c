@@ -994,6 +994,26 @@ dav_error *dav_bind_locks_validate_walker(dav_walk_resource *wres, int calltype)
     return NULL;
 }
 
+dav_error *dav_validate_resource(request_rec *r,
+                                 dav_if_header *if_hdr,
+                                 dav_lockdb *lockdb,
+                                 dav_resource *resource,
+                                 int flags,
+                                 dav_response **response)
+{
+    dav_lock *locks = NULL;
+    dav_error *err = NULL;
+
+    err = lockdb->hooks->get_locks(lockdb, resource,
+                                   DAV_GETLOCKS_RESOLVED, &locks);
+    if (err) return err;
+
+    err = dav_validate_ifheader_locks
+      (r, lockdb->hooks, if_hdr, locks, DAV_VALIDATE_A_LOCK, NULL);
+
+    return err;
+}
+
 DAV_DECLARE(dav_error *) dav_validate_bind(request_rec *r,
                                            int depth,
                                            dav_if_header *if_hdr,
@@ -1032,8 +1052,7 @@ DAV_DECLARE(dav_error *) dav_validate_bind(request_rec *r,
     ctx.uri_uuid = apr_hash_make(pool);
     ctx.uuid_dinf_lock = apr_hash_make(pool);
 
-    if (!(flags & DAV_VALIDATE_IGNORE_BIND_LOCKS))
-        ctx.lock_hooks->get_bind_locks(lockdb, bind, &bind_locks);
+    ctx.lock_hooks->get_bind_locks(lockdb, bind, &bind_locks);
 
     lr_res_map = apr_hash_make(pool);
     res_ltl_map = apr_hash_make(pool);
@@ -1560,8 +1579,6 @@ DAV_DECLARE(dav_error *) dav_validate_request(request_rec *r,
         err = (*repos_hooks->get_parent_resource)(bind->cur_resource, 
                                                   &bind->collection);
         if (err) return err;
-        if (bind->collection == NULL)
-            bind->collection = bind->cur_resource;
         bind->bind_name = basename(bind->cur_resource->uri);
     }
 
@@ -1603,6 +1620,12 @@ DAV_DECLARE(dav_error *) dav_validate_request(request_rec *r,
         if (l_i) while(l_i->next) l_i = l_i->next;
         err = dav_validate_unbind(r, if_hdr, lockdb, unbind, flags,
                                   response, l_i ? &l_i->next : p_remove_locks);
+        if (err) goto error;
+    }
+
+    if (flags & DAV_VALIDATE_RESOURCE) {
+        err = dav_validate_resource(r, if_hdr, lockdb, bind->cur_resource, flags,
+                                    response);
         if (err) goto error;
     }
 
