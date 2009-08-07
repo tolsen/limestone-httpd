@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 783467 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -185,8 +185,6 @@
 
     <ol>
       <li>If a vhost has no <directive module="core">ServerAdmin</directive>,
-      <directive module="core">ResourceConfig</directive>,
-      <directive module="core">AccessConfig</directive>,
       <directive module="core">Timeout</directive>,
       <directive module="core">KeepAliveTimeout</directive>,
       <directive module="core">KeepAlive</directive>,

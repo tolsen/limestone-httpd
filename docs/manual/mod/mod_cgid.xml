@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 425131 $ -->
+<!-- $LastChangedRevision: 735318 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -82,7 +82,7 @@ the cgi daemon</description>
 
 <usage>
     <p>This directive sets the filename prefix of the socket to use for
-    communication with the CGI daemon, an extension correspondening to
+    communication with the CGI daemon, an extension corresponding to
     the process ID of the server will be appended. The socket will be opened
     using the permissions of the user who starts Apache (usually
     root). To maintain the security of communications with CGI

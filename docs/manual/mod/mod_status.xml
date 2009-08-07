@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 668729 $ -->
+<!-- $LastChangedRevision: 779150 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -169,7 +169,7 @@ of a request or the last 63, assuming the request itself is greater than
     <table border="1">
       <tr>
         <th>Off (default)</th>
-        <td>GET&nbsp;/disk1/storage/apache/htdocs/images/imagestore1/food/fruits</td>
+        <td>GET&nbsp;/disk1/storage/apache/htdocs/images/imagestore1/food/apples</td>
       </tr>
       <tr>
         <th>On</th>

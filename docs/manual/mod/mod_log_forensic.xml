@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 757187 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -135,7 +135,7 @@ version 2.1</compatibility>
 
       <note><title>Note</title>
         <p>When entering a file path on non-Unix platforms, care should be taken
-        to make sure that only forward slashed are used even though the platform
+        to make sure that only forward slashes are used even though the platform
         may allow the use of back slashes. In general it is a good idea to always 
         use forward slashes throughout the configuration files.</p>
       </note></dd>

@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 641535 $ -->
+<!-- $LastChangedRevision: 739809 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -60,7 +60,9 @@
 <section id="example">
 <title>Configuration Example</title>
 <p>This simple example shows use of this module in the context of
-the Authentication and DBD frameworks.</p>
+the Authentication and DBD frameworks. Please note that you need
+to load an authorization module, such as <module>mod_authz_user</module>,
+to get it working.</p>
 <example><pre>
 # mod_dbd configuration
 DBDriver pgsql

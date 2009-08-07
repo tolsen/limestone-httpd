@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.de.xsl"?>
-<!-- English Revision: 167959:722534 (outdated) -->
+<!-- English Revision: 167959:787961 (outdated) -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -925,6 +925,12 @@ Dateien an den Client auszuliefern</description>
       </indent>
       &lt;/Directory&gt;
     </example>
+    <p>Beachten Sie bitte, dass die verzeichnisbasierte und
+       .htaccess-Konfiguration von <directive>EnableSendfile</directive>
+       nicht vom <module>mod_disk_cache</module>-Modul unterst&uuml;tzt wird.
+       Nur die globale Konfiguration von <directive>EnableSendfile</directive>
+       wird vom Modul beachtet.
+    </p>
 </usage>
 </directivesynopsis>
 
