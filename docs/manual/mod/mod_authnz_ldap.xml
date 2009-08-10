@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 701648 $ -->
+<!-- $LastChangedRevision: 726458 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -942,7 +942,7 @@ environment variable</description>
         will search for all objects in the tree. Filters are
         limited to approximately 8000 characters (the definition of
         <code>MAX_STRING_LEN</code> in the Apache source code). This
-        should be than sufficient for any application.</dd>
+        should be more than sufficient for any application.</dd>
 </dl>
 
     <p>When doing searches, the attribute, filter and username passed

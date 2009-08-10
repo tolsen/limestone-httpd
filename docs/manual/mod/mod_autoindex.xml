@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 721731 $ -->
+<!-- $LastChangedRevision: 781422 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -945,6 +945,7 @@ Name|Date|Size|Description</syntax>
 <context>directory</context><context>.htaccess</context>
 </contextlist>
 <override>Indexes</override>
+<compatibility>Available in Apache 2.2.11 and later</compatibility>
 
 <usage>
     <p>The <directive>IndexHeadInsert</directive> directive specifies a

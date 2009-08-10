@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 722534 $ -->
+<!-- $LastChangedRevision: 787961 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -903,6 +903,12 @@ Locations</a></seealso>
       </indent>
       &lt;/Directory&gt;
     </example>
+    <p>Please note that the per-directory and .htaccess configuration
+       of <directive>EnableSendfile</directive> is not supported by
+       <module>mod_disk_cache</module>.
+       Only global definition of <directive>EnableSendfile</directive>
+       is taken into account by the module.
+    </p>
 </usage>
 </directivesynopsis>
 
@@ -1947,8 +1953,8 @@ URLs</description>
     </note>
 
     <p>For all origin (non-proxy) requests, the URL to be matched is a
-    URL-path of the form <code>/path/</code>.  No scheme, hostname,
-    port, or query string may be included.  For proxy requests, the
+    URL-path of the form <code>/path/</code>.  <em>No scheme, hostname,
+    port, or query string may be included.</em>  For proxy requests, the
     URL to be matched is of the form
     <code>scheme://servername/path</code>, and you must include the
     prefix.</p>
@@ -2796,9 +2802,10 @@ to name-virtual hosts</description>
     <directive>ServerAlias</directive> may include wildcards, if appropriate.</p>
 
     <example>
-      &lt;VirtualHost *&gt;<br />
+      &lt;VirtualHost *:80&gt;<br />
       ServerName server.domain.com<br />
       ServerAlias server server2.domain.com server2<br />
+      ServerAlias *.example.com<br />
       # ...<br />
       &lt;/VirtualHost&gt;
     </example>
@@ -3130,26 +3137,29 @@ certain events before failing a request</description>
 <contextlist><context>server config</context><context>virtual host</context></contextlist>
 
 <usage>
-    <p>The <directive>TimeOut</directive> directive currently defines
-    the amount of time Apache will wait for three things:</p>
+    <p>The <directive>TimeOut</directive> directive defines the length
+    of time Apache will wait for I/O in various circumstances:</p>
 
     <ol>
-      <li>The total amount of time it takes to receive a GET
-      request.</li>
+      <li>When reading data from the client, the length of time to
+      wait for a TCP packet to arrive if the read buffer is
+      empty.</li>
 
-      <li>The amount of time between receipt of TCP packets on a
-      POST or PUT request.</li>
+      <li>When writing data to the client, the length of time to wait
+      for an acknowledgement of a packet if the send buffer is
+      full.</li>
 
-      <li>The amount of time between ACKs on transmissions of TCP
-      packets in responses.</li>
+      <li>In <module>mod_cgi</module>, the length of time to wait for
+      output from a CGI script.</li>
+
+      <li>In <module>mod_ext_filter</module>, the length of time to
+      wait for output from a filtering process.</li>
+
+      <li>In <module>mod_proxy</module>, the default timeout value if
+      <directive module="mod_proxy">ProxyTimeout</directive> is not
+      configured.</li>
     </ol>
 
-    <p>We plan on making these separately configurable at some point
-    down the road. The timer used to default to 1200 before 1.2,
-    but has been lowered to 300 which is still far more than
-    necessary in most situations. It is not set any lower by
-    default because there may still be odd places in the code where
-    the timer is not reset when a packet is sent. </p>
 </usage>
 </directivesynopsis>
 

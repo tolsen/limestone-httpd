@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 698484 $ -->
+<!-- $LastChangedRevision: 791345 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -133,7 +133,6 @@ host</context></contextlist>
     deny this to a few, use the following:</p>
 
     <example>
-      UserDir enabled<br />
       UserDir disabled user4 user5 user6
     </example>
 

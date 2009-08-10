@@ -1,11 +1,11 @@
 APACHE 2.2 STATUS:                                              -*-text-*-
-Last modified at [$Date: 2008-12-06 10:11:00 -0500 (Sat, 06 Dec 2008) $]
+Last modified at [$Date: 2009-08-06 03:35:26 -0400 (Thu, 06 Aug 2009) $]
 
 The current version of this file can be found at:
 
   * http://svn.apache.org/repos/asf/httpd/httpd/branches/2.2.x/STATUS
 
-Documentation status is maintained seperately and can be found at:
+Documentation status is maintained separately and can be found at:
 
   * docs/STATUS in this source tree, or
   * http://svn.apache.org/repos/asf/httpd/httpd/trunk/docs/STATUS
@@ -25,8 +25,10 @@ Patches considered for backport are noted in their branches' STATUS:
 Release history:
     [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
           while x.{even}.z versions are Stable/GA releases.]
-
-    2.2.11  : Tagged December 6, 2008.
+    2.2.14  : In development
+    2.2.13  : Tagged August 6, 2009.
+    2.2.12  : Released July 28, 2009.
+    2.2.11  : Released December 14, 2008.
     2.2.10  : Released October 14, 2008.
     2.2.9   : Released June 14, 2008.
     2.2.8   : Released January 19, 2008.
@@ -80,74 +82,49 @@ CURRENT RELEASE NOTES:
 
 RELEASE SHOWSTOPPERS:
 
-  None
+
 
 PATCHES ACCEPTED TO BACKPORT FROM TRUNK:
   [ start all new proposals below, under PATCHES PROPOSED. ]
 
+
+
 PATCHES PROPOSED TO BACKPORT FROM TRUNK:
   [ New proposals should be added at the end of the list ]
 
+ * prefork MPM: simple patch to enable mod_privileges.
+   trunk: N/A (this patch substitutes for the availability of
+               drop_privileges hook).
+   2.2.x patch:
+      http://people.apache.org/~niq/patches/2.2mod_privileges-core-patch
+   +1: niq
+
+ * mod_cache: Add CacheIgnoreURLSessionIdentifiers directive to ignore
+              defined session identifiers encoded in the URL when caching.
+   Trunk version of patch:
+      http://svn.apache.org/viewvc?rev=777042&view=rev
+      http://svn.apache.org/viewvc?rev=777091&view=rev
+      http://svn.apache.org/viewvc?rev=778438&view=rev
+      http://svn.apache.org/viewvc?rev=778439&view=rev
+   Backport version for 2.2.x of patch:
+      Trunk version of patch works
+   +1: rpluem, jim
+
+ * unixd: set suexec_enabled correctly when httpd is run by non-root
+   PR 42175
+   Trunk Patch: http://cvs.apache.org/viewvc?view=rev&revision=791337
+   2.2.x Patch: https://issues.apache.org/bugzilla/attachment.cgi?id=20004
+   +1: niq
+   -0: wrowe; Please refer to man BUGS of access for linux 2.4 vs 2.6 kernels,
+              potentially a suspect test for root.
+
 PATCHES/ISSUES THAT ARE STALLED
-
-   * mod_ssl: Add server name indication (RFC 4366) support (PR 34607).
-      Trunk version of patches:
-         http://svn.apache.org/viewvc?view=rev&revision=606190
-         http://svn.apache.org/viewvc?view=rev&revision=607420
-         http://svn.apache.org/viewvc?view=rev&revision=607425
-         http://svn.apache.org/viewvc?view=rev&revision=611216
-         http://svn.apache.org/viewvc/httpd/httpd/trunk/modules/ssl/ssl_engine_kernel.c?r1=611216&r2=630436
-         http://svn.apache.org/viewvc?view=rev&revision=662815
-
-      Backport version for 2.2.x of updated patch:
-         http://people.apache.org/~fuankg/diffs/httpd-2.2.x-sni.diff
-      +1: fuankg
-      +0: like ssl upgrade of 2.2, perhaps this is a good reason to bring
-          httpd-2.4 to completion?  vhost changes could be disruptive to
-          third party module authors.
-      -1: rpluem: jorton found some problems with the trunk version and they
-                  should be fixed / discussed in trunk before we backport.
-          pquerna: Until issues for this feature are fixed in trunk, we can not
-                   backport it.
-
 
   * srclib/pcre and vendor/pcre
     http://www.vuxml.org/freebsd/pkg-pcre.html
 
     update to pcre-7.8
-    +1: pgollucci, pquerna
-    -0: covener: Don't We get a pass on some of these issues for building 
-                 without UTF-8 support and/or not having ever moved past 5.x?
-                 It's not always crisp from the advisories. I'd hate to jump 
-                 up to 7.8 and pick up unknown exposures from an expanding
-                 codebase.
-        pquerna says: We can't protect ourselves from our dependencies by _not_ 
-            upgrading -- the best policy IMO is to follow them, 5.x is not going
-            to be maintained.
-    +0
-    -1: niq: since pcre just got deleted from trunk, this isn't even
-             a backport being proposed.  It's an untested change over
-             their major versions, when we promise binary-compatibility!
-             If we're in the business of untested changes, then make
-             the sane one and just stop bundling it altogether.
-    -1: rpluem: Agree with niq on binary compatibility argument. But IMHO
-                unbundling it is also not possible with 2.2.x for the
-                same reason. IMHO this has to wait until 2.4.
-    -1: sctemme: This is one of the perils of bundling, but IMHO for 2.2.x
-                 we're stuck with it.  And if that starts inheriting us 
-                 security issues that we can't fix, all the more reason 
-                 to retire the branch.
-
-    pgollucci volunteers
-
-    pgollucci replies: known to work on freebsd see the WITH_PCRE_FROM_PORTS
-                       option in www/apache22.
-
-    backport/merge 5.0v7.8 into vendor/pcre/current
-    +1 
-    -0
-    +0
-    -1: pgollucci
+    outcome: remove from trunk, leave alone in branches/2.2.x and branches/2.0.x
 
  * core, authn/z: Avoid calling access control hooks for internal requests
    with configurations which match those of initial request.  Revert to
@@ -212,3 +189,13 @@ PATCHES/ISSUES THAT ARE STALLED
               need to be added to this. See also
               http://mail-archives.apache.org/mod_mbox/httpd-dev/200607.mbox/%3c20060723093125.GA19423@redhat.com%3e
               and follow ups for more details.
+
+ * mod_dir: add DefaultMapping directive
+   PR 47184
+   Trunk patch: http://svn.apache.org/viewvc?view=rev&revision=785425
+                http://svn.apache.org/viewvc?view=rev&revision=795450
+   2.2.x patch: http://people.apache.org/~niq/patches/47184.patch
+                (identical but for offsets, but patch failed on trunk version)
+                plus docs patch from r795450
+   +1: niq
+   -1: wrowe;  See Message-ID: <4A64D3CA.4050300@rowe-clan.net>

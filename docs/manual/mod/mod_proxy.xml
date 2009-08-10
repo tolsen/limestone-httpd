@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 713145 $ -->
+<!-- $LastChangedRevision: 782385 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -513,17 +513,20 @@ expressions</description>
 <directivesynopsis>
 <name>BalancerMember</name>
 <description>Add a member to a load balancing group</description>
-<syntax>BalancerMember <var>url</var> [<var
+<syntax>BalancerMember [<var>balancerurl</var>] <var>url</var> [<var
                 >key=value [key=value ...]]</var></syntax>
 <contextlist><context>directory</context>
 </contextlist>
 <compatibility>BalancerMember is only available in Apache 2.2
         and later.</compatibility>
 <usage>
-    <p>This directive adds a member to a load balancing group. It must be used
+    <p>This directive adds a member to a load balancing group. It could be used
     within a <code>&lt;Proxy <var>balancer://</var>...&gt;</code> container
-    directive, and can take any of the parameters available to
+    directive, and can take any of the key value pairs available to
     <directive module="mod_proxy">ProxyPass</directive> directives.</p>
+    <p>The balancerurl is only needed when not in <code>&lt;Proxy <var>balancer://</var>...&gt;</code>
+    container directive. It corresponds to the url of a balancer defined in
+    <directive module="mod_proxy">ProxyPass</directive> directive.</p>
 </usage>
 </directivesynopsis>
 
@@ -805,7 +808,8 @@ expressions</description>
     </table>
 
     <p>If the Proxy directive scheme starts with the
-    <code>balancer://</code> then a virtual worker that does not really
+    <code>balancer://</code> (eg: <code>balancer://cluster/</code>, 
+    any path information is ignored)  then a virtual worker that does not really
     communicate with the backend server will be created. Instead it is responsible
     for the management of several "real" workers. In that case the special set of
     parameters can be add to this virtual worker. See <module>mod_proxy_balancer</module>

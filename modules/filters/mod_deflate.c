@@ -373,33 +373,6 @@ static apr_status_t deflate_ctx_cleanup(void *data)
     return APR_SUCCESS;
 }
 
-static const char *chomp_quote(apr_pool_t *pool, const char *s)
-{
-    char *result = apr_pstrdup(pool, s);
-    result[strlen(result) - 1] = '\0';
-
-    return result;
-}
-
-/* PR 39727: we're screwing up our clients if we leave a strong ETag
- * header while transforming content.  Henrik Nordstrom suggests
- * appending ";gzip".
- *
- * Pending a more thorough review of our Etag handling, let's just
- * implement his suggestion.  It fixes the bug, or at least turns it
- * from a showstopper to an inefficiency.  And it breaks nothing that
- * wasn't already broken.
- */
-static void deflate_check_etag(request_rec *r, const char *transform)
-{
-    const char *etag = apr_table_get(r->headers_out, "ETag");
-    if (etag && (((etag[0] != 'W') && (etag[0] !='w')) || (etag[1] != '/'))) {
-        apr_table_set(r->headers_out, "ETag",
-                      apr_pstrcat(r->pool, chomp_quote(r->pool, etag), "-", 
-                                  transform, "\"", NULL));
-    }
-}
-
 static apr_status_t deflate_out_filter(ap_filter_t *f,
                                        apr_bucket_brigade *bb)
 {
@@ -597,7 +570,6 @@ static apr_status_t deflate_out_filter(ap_filter_t *f,
         }
         apr_table_unset(r->headers_out, "Content-Length");
         apr_table_unset(r->headers_out, "Content-MD5");
-        deflate_check_etag(r, "gzip");
 
         /* initialize deflate output buffer */
         ctx->stream.next_out = ctx->buffer;
@@ -1129,7 +1101,6 @@ static apr_status_t inflate_out_filter(ap_filter_t *f,
         /* these are unlikely to be set anyway, but ... */
         apr_table_unset(r->headers_out, "Content-Length");
         apr_table_unset(r->headers_out, "Content-MD5");
-        deflate_check_etag(r, "gunzip");
 
         /* initialize inflate output buffer */
         ctx->stream.next_out = ctx->buffer;

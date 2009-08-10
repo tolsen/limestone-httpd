@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 687498 $ -->
+<!-- $LastChangedRevision: 783730 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -257,7 +257,7 @@ The following Mutex <em>types</em> are available:</p>
 <li><code>fcntl:/path/to/mutex</code>
     <p>
     This is a portable Mutex variant where a physical (lock-)file and the <code>fcntl()</code>
-    fucntion are used as the Mutex.
+    function are used as the Mutex.
     Always use a local disk filesystem for <code>/path/to/mutex</code> and never a file
     residing on a NFS- or AFS-filesystem. It is only available when the underlying platform
     and <glossary>APR</glossary> supports it. Note: Internally, the Process ID (PID) of the
@@ -526,7 +526,8 @@ The available (case-insensitive) <em>protocol</em>s are:</p>
 
 <li><code>SSLv3</code>
     <p>
-    This is the Secure Sockets Layer (SSL) protocol, version 3.0, from the Netscape Corportaion. 
+    This is the Secure Sockets Layer (SSL) protocol, version 3.0, from
+    the Netscape Corporation. 
     It is the successor to SSLv2 and the predecessor to TLSv1. It's supported by
     almost all popular browsers.</p></li>
 
@@ -539,7 +540,7 @@ The available (case-insensitive) <em>protocol</em>s are:</p>
 <li><code>All</code>
     <p>
     This is a shortcut for ``<code>+SSLv2 +SSLv3 +TLSv1</code>'' and a
-    convinient way for enabling all protocols except one when used in
+    convenient way for enabling all protocols except one when used in
     combination with the minus sign on a protocol as the example above 
     shows.</p></li>
 </ul>
@@ -775,7 +776,7 @@ SSLCertificateKeyFile /usr/local/apache2/conf/ssl.key/server.key
 This directive sets the optional <em>all-in-one</em> file where you can
 assemble the certificates of Certification Authorities (CA) which form the
 certificate chain of the server certificate. This starts with the issuing CA
-certificate of of the server certificate and can range up to the root CA
+certificate of the server certificate and can range up to the root CA
 certificate. Such a file is simply the concatenation of the various
 PEM-encoded CA Certificate files, usually in certificate chain order.</p>
 <p>
@@ -1324,6 +1325,69 @@ SSL_VERSION_INTERFACE  SSL_CLIENT_S_DN_OU     SSL_SERVER_S_DN_OU
 </directivesynopsis>
 
 <directivesynopsis>
+<name>SSLRenegBufferSize</name>
+<description>Set the size for the SSL renegotiation buffer</description>
+<syntax>SSLRenegBufferSize <var>bytes</var></syntax>
+<default>SSLRenegBufferSize 131072</default>
+<contextlist><context>directory</context>
+<context>.htaccess</context></contextlist>
+<override>AuthConfig</override>
+
+<usage>
+
+<p>If an SSL renegotiation is required in per-location context, for
+example, any use of <directive
+module="mod_ssl">SSLVerifyClient</directive> in a Directory or
+Location block, then <module>mod_ssl</module> must buffer any HTTP
+request body into memory until the new SSL handshake can be performed.
+This directive can be used to set the amount of memory that will be
+used for this buffer. </p>
+
+<note type="warning"><p>
+Note that in many configurations, the client sending the request body
+will be untrusted so a denial of service attack by consumption of
+memory must be considered when changing this configuration setting.
+</p></note>
+
+<example><title>Example</title>
+SSLRenegBufferSize 262144
+</example>
+</usage>
+</directivesynopsis>
+
+<directivesynopsis>
+<name>SSLStrictSNIVHostCheck</name>
+<description>Whether to allow non SNI clients to access a name based virtual
+host.
+</description>
+<syntax>SSLStrictSNIVHostCheck on|off</syntax>
+<default>SSLStrictSNIVHostCheck off</default>
+<contextlist><context>server config</context>
+<context>virtual host</context></contextlist>
+<compatibility>Available after Apache 2.2.11</compatibility>
+
+<usage>
+<p>
+This directive sets whether a non SNI client is allowed to access a name based
+virtual host. If set to <code>on</code> in the non default name based virtual
+host, non SNI clients are not allowed to access this particular virtual host.
+If set to <code>on</code> in the default name based virtual host, non SNI
+clients are not allowed to access any name based virtual host belonging to
+this IP / port combination.
+</p>
+
+<note type="warning"><p>
+This option is only available if httpd was compiled against an SNI capable
+version of OpenSSL.
+</p></note>
+
+<example><title>Example</title>
+SSLStrictSNIVHostCheck on
+</example>
+</usage>
+</directivesynopsis>
+
+<directivesynopsis>
 <name>SSLProxyMachineCertificatePath</name>
 <description>Directory of PEM-encoded client certificates and keys to be used by the proxy</description>
 <syntax>SSLProxyMachineCertificatePath <em>directory</em></syntax>
@@ -1467,6 +1531,48 @@ which is directly known to the server (i.e. the CA's certificate is under
 <directive module="mod_ssl">SSLProxyCACertificatePath</directive>), etc.</p>
 <example><title>Example</title>
 SSLProxyVerifyDepth 10
+</example>
+</usage>
+</directivesynopsis>
+
+<directivesynopsis>
+<name>SSLProxyCheckPeerExpire</name>
+<description>Whether to check if remote server certificate is expired
+</description>
+<syntax>SSLProxyCheckPeerExpire on|off</syntax>
+<default>SSLProxyCheckPeerExpire off</default>
+<contextlist><context>server config</context>
+<context>virtual host</context></contextlist>
+
+<usage>
+<p>
+This directive sets whether it is checked if the remote server certificate
+is expired or not. If the check fails a 502 status code (Bad Gateway) is
+sent.
+</p>
+<example><title>Example</title>
+SSLProxyCheckPeerExpire on
+</example>
+</usage>
+</directivesynopsis>
+
+<directivesynopsis>
+<name>SSLProxyCheckPeerCN</name>
+<description>Whether to check the remote server certificates CN field
+</description>
+<syntax>SSLProxyCheckPeerCN on|off</syntax>
+<default>SSLProxyCheckPeerCN off</default>
+<contextlist><context>server config</context>
+<context>virtual host</context></contextlist>
+
+<usage>
+<p>
+This directive sets whether the remote server certificates CN field is
+compared against the hostname of the request URL. If both are not equal
+a 502 status code (Bad Gateway) is sent.
+</p>
+<example><title>Example</title>
+SSLProxyCheckPeerCN on
 </example>
 </usage>
 </directivesynopsis>

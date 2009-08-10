@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
 <!DOCTYPE language SYSTEM "../lang.dtd">
-<!-- $LastChangedRevision: 636524 $ -->
+<!-- $LastChangedRevision: 744898 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -67,6 +67,10 @@
         <!-- Used in manualpage -->
         <message id="relatedmodules">Related Modules</message>
         <message id="relateddirectives">Related Directives</message>
+        <message id="lowercase">abcdefghijklmnopqrstuvwxyz</message>
+        <message id="uppercase">ABCDEFGHIJKLMNOPQRSTUVWXYZ</message>
+        <message id="name-section">NAME</message>
+        <message id="hyphenation"></message>
 
         <!-- Used in description box for directives -->
         <message id="syntax">Syntax</message>

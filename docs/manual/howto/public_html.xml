@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8' ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 658547 $ -->
+<!-- $LastChangedRevision: 791345 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -130,7 +130,6 @@
     what users are permitted to use this functionality:</p>
 
     <example>
-      UserDir enabled<br />
       UserDir disabled root jro fish
     </example>
 
