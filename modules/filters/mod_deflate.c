@@ -718,45 +718,6 @@ static apr_status_t deflate_out_filter(ap_filter_t *f,
     return APR_SUCCESS;
 }
 
-static const char *find_replace(apr_pool_t *pool, const char *s, 
-                                const char *pattern, const char *replacement)
-{
-    const char *result = "", *buffer;
-    const char *pos = s, *match;
-    int offset = strlen(pattern);
-
-    while((match = strstr(pos, pattern))) {
-        buffer = apr_pstrndup(pool, pos, match - pos);
-        result = apr_pstrcat(pool, result, buffer, replacement, NULL);
-        pos = match + offset;
-    }
-
-    return apr_pstrcat(pool, result, pos, NULL);
-}
-
-static void fix_header(request_rec *r, const char *header)
-{
-    const char *value = apr_table_get(r->headers_in, header);
-    const char *new_value;
-
-    if (value) {
-        new_value = find_replace(r->pool, value, "-gzip\"", "\"");
-        new_value = find_replace(r->pool, new_value, "-gunzip\"", "\"");
-        apr_table_set(r->headers_in, header, new_value);
-    }
-
-    return;
-}
-
-static int deflate_fixups(request_rec *r)
-{
-    /* Fix the etags in If-* headers that we transformed */
-    fix_header(r, "If-None-Match");
-    fix_header(r, "If-Match");
-
-    return OK;
-}
-
 /* This is the deflate input filter (inflates).  */
 static apr_status_t deflate_in_filter(ap_filter_t *f,
                                       apr_bucket_brigade *bb,
@@ -1359,7 +1320,6 @@ static void register_hooks(apr_pool_t *p)
                               AP_FTYPE_RESOURCE-1);
     ap_register_input_filter(deflateFilterName, deflate_in_filter, NULL,
                               AP_FTYPE_CONTENT_SET);
-    ap_hook_fixups(deflate_fixups, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
 static const command_rec deflate_filter_cmds[] = {
