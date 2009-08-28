@@ -2614,7 +2614,11 @@ typedef enum {
     DAV_PERMISSION_WRITE_CONTENT,
     DAV_PERMISSION_BIND,
     DAV_PERMISSION_UNBIND,
+    DAV_PERMISSION_READ_PRIVATE_PROPERTIES,
+    DAV_PERMISSION_BIND_COLLECTION
 } dav_acl_permission_type;
+
+#define LIMEBITS_NS "http://limebits.com/ns/1.0/"
 
 struct _dav_privilege
 {
@@ -2692,6 +2696,7 @@ struct _dav_acl {
 #define DAV_PERMISSION_READ_CURRENT_USER_PRIVILEGE_SET_SIGNATURE	"read-current-user-privilege-set"
 #define DAV_PERMISSION_WRITE_ACL_SIGNATURE	"write-acl"
 #define DAV_PERMISSION_BIND_SIGNATURE	"bind"
+#define DAV_PERMISSION_BIND_COLLECTION_SIGNATURE	"bind-collection"
 #define DAV_PERMISSION_UNBIND_SIGNATURE	"unbind"
 #define DAV_PERMISSION_ALL_SIGNATURE	"all"
 

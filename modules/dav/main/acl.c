@@ -375,7 +375,12 @@ dav_privilege *dav_privilege_new_by_type(apr_pool_t *p,
 	retVal->ns = NULL;
 	retVal->name = apr_pstrdup(p, DAV_PERMISSION_BIND_SIGNATURE);
     }
-    else if (privType == DAV_PERMISSION_UNBIND)
+     else if (privType == DAV_PERMISSION_BIND_COLLECTION)
+    {
+	retVal->ns = LIMEBITS_NS;
+	retVal->name = apr_pstrdup(p, DAV_PERMISSION_BIND_COLLECTION_SIGNATURE);
+    }
+   else if (privType == DAV_PERMISSION_UNBIND)
     {
 	retVal->ns = NULL;
 	retVal->name = apr_pstrdup(p, DAV_PERMISSION_UNBIND_SIGNATURE);

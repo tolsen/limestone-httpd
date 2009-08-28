@@ -3144,7 +3144,6 @@ static int dav_method_proppatch(dav_request *dav_r)
     dav_response resp = { 0 };
     apr_text *propstat_text;
     dav_auto_version_info av_info;
-    int resource_state;
 
     if (!resource->exists) {
         /* Apache will supply a default error for this. */
@@ -3593,7 +3592,7 @@ static int dav_is_allow_method_mkcol(dav_request *dav_r,
 	
         if (err == NULL && parent_resource && parent_resource->exists ) {
 	    retVal = (*acl_hook->is_allow)(principal, parent_resource, 
-                                           DAV_PERMISSION_BIND);
+                                           DAV_PERMISSION_BIND_COLLECTION);
 
             /* percolate the need-privileges error tag */
             if(!retVal) resource->err = parent_resource->err; 
@@ -3971,8 +3970,16 @@ static int dav_is_allow_method_copy(dav_request *dav_r,
                 int overwrite = dav_get_overwrite(r);
 
                 if(overwrite > 0) {
-                    if ((resnew->collection == 0) ^ (resource->collection == 0)) {
+                    if ((resnew->collection == 0) && (resource->collection != 0)) {
                         /* If resourcetype is being changed, check for *bind priv */
+                        is_acl_allow = 
+                          is_acl_allow
+                          && ((*acl_hook->is_allow)(principal, parent_new_resource, 
+                                                    DAV_PERMISSION_UNBIND))
+                          && ((*acl_hook->is_allow)(principal, parent_new_resource, 
+                                                    DAV_PERMISSION_BIND_COLLECTION));
+                        if (!is_acl_allow) err = parent_new_resource->err;
+                    } else if ((resnew->collection !=0) && (resource->collection == 0)) {
                         is_acl_allow = 
                           is_acl_allow
                           && ((*acl_hook->is_allow)(principal, parent_new_resource, 
@@ -4003,10 +4010,18 @@ static int dav_is_allow_method_copy(dav_request *dav_r,
                 }
 	    }
 	    else {
-	        is_acl_allow = 
-                    is_acl_allow 
-                    && (*acl_hook->is_allow)(principal, parent_new_resource, 
-                                             DAV_PERMISSION_BIND);
+                if (resource->collection) {
+                    is_acl_allow = 
+                        is_acl_allow 
+                        && (*acl_hook->is_allow)(principal, parent_new_resource, 
+                                                 DAV_PERMISSION_BIND_COLLECTION);
+                }
+                else {
+                    is_acl_allow = 
+                        is_acl_allow 
+                        && (*acl_hook->is_allow)(principal, parent_new_resource, 
+                                                 DAV_PERMISSION_BIND);
+                }
                 if(!is_acl_allow) err = parent_new_resource->err;
             }
 	
@@ -4091,10 +4106,18 @@ static int dav_is_allow_method_move(dav_request *dav_r,
 	    is_acl_allow = (*acl_hook->is_allow)(principal, parent_resource, 
                                                  DAV_PERMISSION_UNBIND);
 
-	    is_acl_allow = 
-                is_acl_allow 
-                && (*acl_hook->is_allow)(principal, parent_new_resource, 
-                                         DAV_PERMISSION_BIND);
+            if (resource->collection) {
+                is_acl_allow = 
+                    is_acl_allow 
+                    && (*acl_hook->is_allow)(principal, parent_new_resource, 
+                                             DAV_PERMISSION_BIND_COLLECTION);
+            }
+            else {
+                is_acl_allow = 
+                    is_acl_allow 
+                    && (*acl_hook->is_allow)(principal, parent_new_resource, 
+                                             DAV_PERMISSION_BIND);
+            }
 	    
 	    if (resnew->exists)
 	        is_acl_allow = 
@@ -5604,18 +5627,12 @@ static int dav_is_allow_method_bind(dav_request *dav_r,
 {
     request_rec *r = dav_r->request;
     int retVal = TRUE;
-    dav_resource *resource = dav_r->resource, *binding;
+    dav_resource *resource = dav_r->resource, *binding, *source;
     dav_error *err;
-    const char *segment_str, *new_uri;
+    const char *target_href, *segment_str, *new_uri;
     apr_xml_doc *doc;
     apr_xml_elem *child;
     request_rec *binding_rec;
-
-    if(resource->exists && acl_hook != NULL) 
-        retVal = (*acl_hook->is_allow)(principal, resource,
-                                       DAV_PERMISSION_BIND);
-
-    if(!retVal) return retVal;
 
     if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
         if (ap_xml_parse_input(r, &doc) != OK)
@@ -5624,6 +5641,34 @@ static int dav_is_allow_method_bind(dav_request *dav_r,
     }
 
     if(!doc) return retVal;
+
+    if ((child = dav_find_child(doc->root, "href")) != NULL) {
+        /* Read Href element */
+        apr_size_t hsize;
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
+                        &target_href, &hsize);
+        if (hsize == 0) {
+            return retVal;
+        }
+    } else {
+        return retVal;
+    }
+
+    if ((err = dav_get_resource_from_uri(target_href, r, 0, NULL, &source)))
+        return retVal;
+
+    if(resource->exists && acl_hook != NULL) {
+        if (source->collection) {
+            retVal = (*acl_hook->is_allow)(principal, resource,
+                                           DAV_PERMISSION_BIND_COLLECTION);
+        }
+        else {
+            retVal = (*acl_hook->is_allow)(principal, resource,
+                                           DAV_PERMISSION_BIND);
+        }
+    }
+
+    if(!retVal) return retVal;
 
     if ((child = dav_find_child(doc->root, "segment")) != NULL) {
         apr_size_t ssize; /* segment string size */
@@ -5644,6 +5689,7 @@ static int dav_is_allow_method_bind(dav_request *dav_r,
     if(binding->exists && acl_hook)
         retVal = (*acl_hook->is_allow)(principal, resource, DAV_PERMISSION_UNBIND);
 
+
     return retVal;
 }
 
@@ -5661,12 +5707,6 @@ static int dav_is_allow_method_rebind(dav_request *dav_r,
     request_rec *old_binding_rec, *binding_rec;
     dav_resource *binding, *old_binding, *parent_resource;
 
-    if(resource->exists && acl_hook != NULL) 
-        retVal = (*acl_hook->is_allow)(principal, resource,
-                                       DAV_PERMISSION_BIND);
-
-    if(!retVal) return retVal;
-
     if (!(doc = (apr_xml_doc *)apr_table_get(r->notes, "parsed_xml_body"))) {
         if (ap_xml_parse_input(r, &doc) != OK)
             return retVal;
@@ -5674,6 +5714,32 @@ static int dav_is_allow_method_rebind(dav_request *dav_r,
     }
 
     if(!doc) return retVal;
+
+    if ((child = dav_find_child(doc->root, "href")) != NULL) {
+        /* Read Href element */
+        apr_size_t hsize;
+        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
+                        &target_href, &hsize);
+        if (hsize == 0) return retVal;
+    }
+    else return retVal;
+
+    err = dav_get_resource_from_uri(target_href, r, 0, 
+                                    &old_binding_rec, &old_binding);
+    if (err) return retVal;
+
+    if(resource->exists && acl_hook != NULL) {
+        if (old_binding->collection) {
+            retVal = (*acl_hook->is_allow)(principal, resource,
+                                           DAV_PERMISSION_BIND_COLLECTION);
+        }
+        else {
+            retVal = (*acl_hook->is_allow)(principal, resource,
+                                           DAV_PERMISSION_BIND);
+        }
+    }
+
+    if(!retVal) return retVal;
 
     if ((child = dav_find_child(doc->root, "segment")) != NULL) {
         apr_size_t ssize; /* segment string size */
@@ -5694,19 +5760,6 @@ static int dav_is_allow_method_rebind(dav_request *dav_r,
     if(binding->exists && acl_hook)
         retVal = (*acl_hook->is_allow)(principal, resource, DAV_PERMISSION_UNBIND);
     if(!retVal) return retVal;
-
-    if ((child = dav_find_child(doc->root, "href")) != NULL) {
-        /* Read Href element */
-        apr_size_t hsize;
-        apr_xml_to_text(r->pool, child, APR_XML_X2T_INNER, doc->namespaces, NULL,
-                        &target_href, &hsize);
-        if (hsize == 0) return retVal;
-    }
-    else return retVal;
-
-    err = dav_get_resource_from_uri(target_href, r, 0, 
-                                    &old_binding_rec, &old_binding);
-    if (err) return retVal;
 
     err = (*old_binding->hooks->get_parent_resource)(old_binding, &parent_resource); 
     if(err) return retVal;
