@@ -7212,6 +7212,10 @@ static int dav_dispatch_method(request_rec *r)
 
     if (err) return dav_handle_err(r, err, NULL);
 
+    if (!r->main && resource->uuid) {
+        apr_table_set(r->subprocess_env, "LIMESTONE_RESOURCE_UUID", resource->uuid);
+    }
+
     dav_r->resource = resource;
     dav_r->apply_to_redirectref = apply_to_redirectref(r);
 
