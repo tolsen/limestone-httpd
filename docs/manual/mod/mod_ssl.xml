@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 783730 $ -->
+<!-- $LastChangedRevision: 810189 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -1364,7 +1364,7 @@ host.
 <default>SSLStrictSNIVHostCheck off</default>
 <contextlist><context>server config</context>
 <context>virtual host</context></contextlist>
-<compatibility>Available after Apache 2.2.11</compatibility>
+<compatibility>Available in Apache 2.2.12 and later</compatibility>
 
 <usage>
 <p>
