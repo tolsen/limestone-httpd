@@ -1,5 +1,5 @@
 APACHE 2.2 STATUS:                                              -*-text-*-
-Last modified at [$Date: 2009-08-06 03:35:26 -0400 (Thu, 06 Aug 2009) $]
+Last modified at [$Date: 2009-09-23 18:20:00 -0400 (Wed, 23 Sep 2009) $]
 
 The current version of this file can be found at:
 
@@ -26,7 +26,7 @@ Release history:
     [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
           while x.{even}.z versions are Stable/GA releases.]
     2.2.14  : In development
-    2.2.13  : Tagged August 6, 2009.
+    2.2.13  : Released August 8, 2009.
     2.2.12  : Released July 28, 2009.
     2.2.11  : Released December 14, 2008.
     2.2.10  : Released October 14, 2008.
@@ -83,40 +83,36 @@ CURRENT RELEASE NOTES:
 RELEASE SHOWSTOPPERS:
 
 
-
 PATCHES ACCEPTED TO BACKPORT FROM TRUNK:
   [ start all new proposals below, under PATCHES PROPOSED. ]
 
 
-
 PATCHES PROPOSED TO BACKPORT FROM TRUNK:
   [ New proposals should be added at the end of the list ]
-
- * prefork MPM: simple patch to enable mod_privileges.
-   trunk: N/A (this patch substitutes for the availability of
-               drop_privileges hook).
-   2.2.x patch:
-      http://people.apache.org/~niq/patches/2.2mod_privileges-core-patch
-   +1: niq
-
- * mod_cache: Add CacheIgnoreURLSessionIdentifiers directive to ignore
-              defined session identifiers encoded in the URL when caching.
-   Trunk version of patch:
-      http://svn.apache.org/viewvc?rev=777042&view=rev
-      http://svn.apache.org/viewvc?rev=777091&view=rev
-      http://svn.apache.org/viewvc?rev=778438&view=rev
-      http://svn.apache.org/viewvc?rev=778439&view=rev
-   Backport version for 2.2.x of patch:
-      Trunk version of patch works
-   +1: rpluem, jim
 
  * unixd: set suexec_enabled correctly when httpd is run by non-root
    PR 42175
    Trunk Patch: http://cvs.apache.org/viewvc?view=rev&revision=791337
    2.2.x Patch: https://issues.apache.org/bugzilla/attachment.cgi?id=20004
    +1: niq
-   -0: wrowe; Please refer to man BUGS of access for linux 2.4 vs 2.6 kernels,
-              potentially a suspect test for root.
+   -0: wrowe; Please refer to man 'access' BUGS section about linux 2.4 
+              vs 2.6 kernels, potentially a suspect test for root.
+
+ * mod_ssl: Improve environment variable extraction to be more
+   efficient and to correctly handle DNs with duplicate tags.
+   PR 45975.
+   Trunk Patch: http://svn.apache.org/viewvc?view=rev&revision=724717
+                http://svn.apache.org/viewvc?view=rev&revision=813165
+   2.2.x Patch: http://people.apache.org/~minfrin/ssl-env.diff
+   +1: minfrin
+
+ * mod_mime: Detect invalid use of MultiviewsMatch inside Location and
+   LocationMatch sections.  
+   PR47754.
+   Trunk Patch: https://svn.apache.org/viewcvs.cgi?view=rev&rev=814728
+   2.2.x Patch: http://people.apache.org/~poirier/PR47754-2.2.x-patch.txt
+   +1: poirier
+
 
 PATCHES/ISSUES THAT ARE STALLED
 
@@ -199,3 +195,12 @@ PATCHES/ISSUES THAT ARE STALLED
                 plus docs patch from r795450
    +1: niq
    -1: wrowe;  See Message-ID: <4A64D3CA.4050300@rowe-clan.net>
+   +1: rbowen - After much debate on IRC, we've agreed on FallbackResource as being the right name for this.
+
+ * prefork MPM: simple patch to enable mod_privileges.
+   trunk: N/A (this patch substitutes for the availability of
+               drop_privileges hook).
+   2.2.x patch:
+      http://people.apache.org/~niq/patches/2.2mod_privileges-core-patch
+   +1: niq
+

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE manualpage SYSTEM "../style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 658547 $ -->
+<!-- $LastChangedRevision: 805050 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -649,8 +649,8 @@ www   IN  A       1.2.3.5
               <p>A sophisticated DNS-based method for
               load-balancing is to use the program
               <code>lbnamed</code> which can be found at <a
-              href="http://www.stanford.edu/~schemers/docs/lbnamed/lbnamed.html">
-              http://www.stanford.edu/~schemers/docs/lbnamed/lbnamed.html</a>.
+              href="http://www.stanford.edu/~riepel/lbnamed/">
+              http://www.stanford.edu/~riepel/lbnamed/</a>.
               It is a Perl 5 program which, in conjunction with auxilliary
               tools, provides real load-balancing via
               DNS.</p>
