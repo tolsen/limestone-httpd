@@ -1,5 +1,5 @@
 APACHE 2.2 STATUS:                                              -*-text-*-
-Last modified at [$Date: 2009-09-23 18:20:00 -0400 (Wed, 23 Sep 2009) $]
+Last modified at [$Date: 2010-03-01 23:55:45 -0500 (Mon, 01 Mar 2010) $]
 
 The current version of this file can be found at:
 
@@ -25,7 +25,8 @@ Patches considered for backport are noted in their branches' STATUS:
 Release history:
     [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
           while x.{even}.z versions are Stable/GA releases.]
-    2.2.14  : In development
+    2.2.15  : Tagged March 1, 2010
+    2.2.14  : Released October 3, 2009.
     2.2.13  : Released August 8, 2009.
     2.2.12  : Released July 28, 2009.
     2.2.11  : Released December 14, 2008.
@@ -97,22 +98,28 @@ PATCHES PROPOSED TO BACKPORT FROM TRUNK:
    +1: niq
    -0: wrowe; Please refer to man 'access' BUGS section about linux 2.4 
               vs 2.6 kernels, potentially a suspect test for root.
+   sf:        Couldn't the linux 2.4 bug be worked around by calling access
+              twice? Once with R_OK and once with X_OK.
 
- * mod_ssl: Improve environment variable extraction to be more
-   efficient and to correctly handle DNs with duplicate tags.
-   PR 45975.
-   Trunk Patch: http://svn.apache.org/viewvc?view=rev&revision=724717
-                http://svn.apache.org/viewvc?view=rev&revision=813165
-   2.2.x Patch: http://people.apache.org/~minfrin/ssl-env.diff
-   +1: minfrin
+  * core: Support wildcards in both the directory and file components of
+    the path specified by the Include directive.
+    Trunk patch: http://svn.apache.org/viewvc?rev=909878&view=rev
+                 http://svn.apache.org/viewvc?rev=917735&view=rev
+                 http://svn.apache.org/viewvc?rev=917759&view=rev
+    2.2.x patch: http://people.apache.org/~minfrin/httpd-wildcard+docs2.patch
+    Submitted by: minfrin, poirier
+    +1: minfrin
 
- * mod_mime: Detect invalid use of MultiviewsMatch inside Location and
-   LocationMatch sections.  
-   PR47754.
-   Trunk Patch: https://svn.apache.org/viewcvs.cgi?view=rev&rev=814728
-   2.2.x Patch: http://people.apache.org/~poirier/PR47754-2.2.x-patch.txt
-   +1: poirier
-
+  * support/htcacheclean: Teach it how to write a pid file (modelled on
+    httpd's writing of a pid file) so that it becomes possible to run
+    more than one instance of htcacheclean on the same machine.
+    Trunk patch: http://svn.apache.org/viewvc?rev=910705&view=rev
+                 http://svn.apache.org/viewvc?rev=910735&view=rev
+                 http://svn.apache.org/viewvc?rev=910756&view=rev
+                 http://svn.apache.org/viewvc?rev=917002&view=rev
+                 http://svn.apache.org/viewvc?rev=917005&view=rev
+    2.2.x patch: http://people.apache.org/~minfrin/htcacheclean-pid.patch
+    +1: minfrin, sf
 
 PATCHES/ISSUES THAT ARE STALLED
 
@@ -161,7 +168,6 @@ PATCHES/ISSUES THAT ARE STALLED
    +1: chrisd
    -0: jim (would prefer to see in 2.4, and to push 2.4 out)
 
-
    * beos MPM: Create pmain pool and run modules' child_init hooks when
      entering ap_mpm_run(), then destroy pmain when exiting ap_mpm_run().
      Otherwise modules' child_init hooks appear to never be executed.
@@ -186,7 +192,7 @@ PATCHES/ISSUES THAT ARE STALLED
               http://mail-archives.apache.org/mod_mbox/httpd-dev/200607.mbox/%3c20060723093125.GA19423@redhat.com%3e
               and follow ups for more details.
 
- * mod_dir: add DefaultMapping directive
+ * mod_dir: add FallbackResource directive
    PR 47184
    Trunk patch: http://svn.apache.org/viewvc?view=rev&revision=785425
                 http://svn.apache.org/viewvc?view=rev&revision=795450
@@ -194,7 +200,6 @@ PATCHES/ISSUES THAT ARE STALLED
                 (identical but for offsets, but patch failed on trunk version)
                 plus docs patch from r795450
    +1: niq
-   -1: wrowe;  See Message-ID: <4A64D3CA.4050300@rowe-clan.net>
    +1: rbowen - After much debate on IRC, we've agreed on FallbackResource as being the right name for this.
 
  * prefork MPM: simple patch to enable mod_privileges.

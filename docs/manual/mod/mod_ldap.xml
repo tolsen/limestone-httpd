@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 569398 $ -->
+<!-- $LastChangedRevision: 902643 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -67,7 +67,7 @@ by other LDAP modules</description>
       # be loaded. Change the "yourdomain.example.com" to<br />
       # match your domain.<br />
       <br />
-      LDAPSharedCacheSize 200000<br />
+      LDAPSharedCacheSize 500000<br />
       LDAPCacheEntries 1024<br />
       LDAPCacheTTL 600<br />
       LDAPOpCacheEntries 1024<br />
@@ -385,12 +385,12 @@ by other LDAP modules</description>
 <name>LDAPSharedCacheSize</name>
 <description>Size in bytes of the shared-memory cache</description>
 <syntax>LDAPSharedCacheSize <var>bytes</var></syntax>
-<default>LDAPSharedCacheSize 102400</default>
+<default>LDAPSharedCacheSize 500000</default>
 <contextlist><context>server config</context></contextlist>
 
 <usage>
     <p>Specifies the number of bytes to allocate for the shared
-    memory cache. The default is 100kb. If set to 0, shared memory
+    memory cache. The default is 500kb. If set to 0, shared memory
     caching will not be used.</p>
 </usage>
 </directivesynopsis>
@@ -566,11 +566,23 @@ connection client certificates.</description>
 <contextlist><context>server config</context></contextlist>
 
 <usage>
-    <p>Specifies the timeout value (in seconds) in which the module will
-    attempt to connect to the LDAP server.  If a connection is not
-    successful with the timeout period, either an error will be 
-    returned or the module will attempt to connect to a secondary LDAP 
-    server if one is specified. The default is 10 seconds.</p>
+    <p>This directive configures the LDAP_OPT_NETWORK_TIMEOUT option in the
+    underlying LDAP client library, when available.  This value typically
+    controls how long the LDAP client library will wait for the TCP connection
+    to the LDAP server to complete.</p>
+
+    <p> If a connection is not successful with the timeout period, either an error will be 
+    returned or the LDAP client library will attempt to connect to a secondary LDAP 
+    server if one is specified (via a space-separated list of hostnames in the 
+    <directive module="mod_ldap">AuthLDAPURL</directive>).</p>
+
+    <p>The default is 10 seconds, if the LDAP client library linked with the 
+    server supports the LDAP_OPT_NETWORK_TIMEOUT option.</p>
+
+    <note>LDAPConnectionTimeout is only available when the LDAP client library linked
+    with the server supports the LDAP_OPT_NETWORK_TIMEOUT option, and the
+    ultimate behavior is dictated entirely by the LDAP client library.
+    </note>
 </usage>
 </directivesynopsis>
 

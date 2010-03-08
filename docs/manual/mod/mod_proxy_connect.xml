@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 669475 $ -->
+<!-- $LastChangedRevision: 910322 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -38,6 +38,11 @@
     <p>Thus, in order to get the ability of handling <code>CONNECT</code>
     requests, <module>mod_proxy</module> and
     <module>mod_proxy_connect</module> have to be present in the server.</p>
+
+    <p>CONNECT is also used, when the server needs to send an HTTPS request
+    through a forward proxy. In this case the server acts as a CONNECT client.
+    This functionality is part of <module>mod_proxy</module> and
+    <module>mod_proxy_connect</module> is not needed in this case.</p>
 
     <note type="warning"><title>Warning</title>
       <p>Do not enable proxying until you have <a
