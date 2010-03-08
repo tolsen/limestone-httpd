@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 696752 $ -->
+<!-- $LastChangedRevision: 896075 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -70,7 +70,7 @@
 		BalancerMember http://192.168.1.50:80<br />
 		BalancerMember http://192.168.1.51:80<br />
 	&lt;/Proxy&gt;<br />
-	ProxyPass /test balancer://mycluster/
+	ProxyPass /test balancer://mycluster
 	</example>
 </section>
 

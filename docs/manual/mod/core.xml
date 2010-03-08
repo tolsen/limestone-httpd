@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 814629 $ -->
+<!-- $LastChangedRevision: 896300 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -1066,6 +1066,11 @@ in case of an error</description>
     This is necessary to guard against security problems caused by
     bad requests.</p>
 
+    <p>If you are using mod_proxy, you may wish to enable
+    <directive module="mod_proxy">ProxyErrorOverride</directive> so that you can provide
+    custom error messages on behalf of your Origin servers. If you don't enable ProxyErrorOverride,
+    Apache will not generate custom error documents for proxied content.</p>
+
     <p>Prior to version 2.0, messages were indicated by prefixing
     them with a single unmatched double quote character.</p>
 </usage>
@@ -1130,7 +1135,7 @@ in case of an error</description>
 <directivesynopsis>
 <name>FileETag</name>
 <description>File attributes used to create the ETag
-HTTP response header</description>
+HTTP response header for static files</description>
 <syntax>FileETag <var>component</var> ...</syntax>
 <default>FileETag INode MTime Size</default>
 <contextlist><context>server config</context><context>virtual host</context>
@@ -1142,7 +1147,7 @@ HTTP response header</description>
     <p>
     The <directive>FileETag</directive> directive configures the file
     attributes that are used to create the <code>ETag</code> (entity
-    tag) response header field when the document is based on a file.
+    tag) response header field when the document is based on a static file.
     (The <code>ETag</code> value is used in cache management to save
     network bandwidth.) In Apache 1.3.22 and earlier, the
     <code>ETag</code> value was <em>always</em> formed
@@ -1186,6 +1191,12 @@ HTTP response header</description>
     These conditional requests will break if the <code>ETag</code> format is
     changed via <directive>FileETag</directive>.
     </note>
+    <note><title>Server Side Includes</title>
+    An ETag is not generated for responses parsed by <module>mod_include</module>, 
+    since the response entity can change without a change of the INode, MTime, or Size 
+    of the static file with embedded SSI directives.
+    </note>
+
 </usage>
 </directivesynopsis>
 

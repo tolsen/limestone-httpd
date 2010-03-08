@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 726458 $ -->
+<!-- $LastChangedRevision: 916091 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -84,7 +84,6 @@ for HTTP Basic authentication.</description>
         <a href="#requiredirectives">The Require Directives</a> 
 
         <ul>
-          <li><a href="#reqvaliduser">Require valid-user</a></li>
           <li><a href="#requser">Require ldap-user</a></li>
           <li><a href="#reqgroup">Require ldap-group</a></li>
           <li><a href="#reqdn">Require ldap-dn</a></li>
@@ -240,9 +239,9 @@ for HTTP Basic authentication.</description>
     was set to <code>off</code>. </p>
 
     <ul>
-        <li>Grant access if there is a <a href="#requser"><code>Require
-        valid-user</code></a> directive. (requires 
-        <module>mod_authz_user</module>)</li>
+        <li>Grant access to all successfully authenticated users if 
+        there is a <a href="#requser"><code>Require valid-user</code></a> 
+        directive. (requires <module>mod_authz_user</module>)</li>
 
         <li>Grant access if there is a <a
         href="#reqgroup"><code>Require group</code></a> directive, and
@@ -305,14 +304,6 @@ for HTTP Basic authentication.</description>
     <code>ldap-group</code>, <code>ldap-attribute</code> and 
     <code>ldap-filter</code>.  Other authorization types may also be 
     used but may require that additional authorization modules be loaded.</p>
-
-<section id="reqvaliduser"><title>Require valid-user</title>
-
-    <p>If this directive exists, <module>mod_authnz_ldap</module> grants
-    access to any user that has successfully authenticated during the
-    search/bind phase.  Requires that <module>mod_authz_user</module> be 
-    loaded.</p>
-</section>
 
 <section id="requser"><title>Require ldap-user</title>
 
@@ -681,6 +672,33 @@ authenticating the user if this one fails</description>
     as if <directive module="mod_authnz_ldap">AuthzLDAPAuthoritative</directive>
     was set to <code>off</code>. </p>
 </usage>
+</directivesynopsis>
+
+<directivesynopsis>
+<name>AuthLDAPBindAuthoritative</name>
+<description>Determines if other authentication providers are used when a user can be mapped to a DN but the server cannot successfully bind with the users credentials.</description>
+<syntax>AuthLDAPBindAuthoritative<em>off|on</em></syntax>
+<default>AuthLDAPBindAuhtoritative on</default>
+<contextlist><context>directory</context><context>.htaccess</context>
+</contextlist>
+<override>AuthConfig</override>
+<compatibility>Available in versions later than 2.2.14</compatibility>
+
+<usage>
+    <p>By default, subsequent authentication providers are only queried if a 
+    user cannot be mapped to a DN, but not if the user can be mapped to a DN and their
+    password cannot be verified with an LDAP bind.  
+    If <directive module="mod_authnz_ldap">AuthLDAPBindAuthoritative</directive> 
+    is set to <em>off</em>, other configured authentication modules will have 
+    a chance to validate the user if the LDAP bind (with the current users credentials) 
+    fails for any reason.</p>
+    <p> This allows users present in both LDAP and 
+    <directive module="mod_authn_file">AuthUserFile</directive> to authenticate
+    when the LDAP server is available but the users account is locked or password
+    is otherwise unusable.</p>
+</usage>
+<seealso><directive module="mod_authn_file">AuthUserFile</directive></seealso>
+<seealso><directive module="mod_auth_basic">AuthBasicProvider</directive></seealso>
 </directivesynopsis>
 
 <directivesynopsis>

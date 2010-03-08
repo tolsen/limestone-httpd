@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 808499 $ -->
+<!-- $LastChangedRevision: 910322 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -475,8 +475,9 @@ request</description>
     </example>
 
     <p><var>scheme</var> is effectively the protocol that should be used to
-    communicate with the remote server; only <code>http</code> is supported by
-    this module.</p>
+    communicate with the remote server; only <code>http</code> and <code>https</code>
+    are supported by this module. When using <code>https</code>, the requests
+    are forwarded through the remote proxy using the HTTP CONNECT method.</p>
 
     <example><title>Example</title>
       ProxyRemote http://goodguys.example.com/ http://mirrorguys.example.com:8000<br />
@@ -862,7 +863,7 @@ expressions</description>
     </table>
     <p>A sample balancer setup</p>
     <example>
-      ProxyPass /special-area http://special.example.com/ smax=5 max=10<br />
+      ProxyPass /special-area http://special.example.com smax=5 max=10<br />
       ProxyPass / balancer://mycluster/ stickysession=JSESSIONID|jsessionid nofailover=On<br />
       &lt;Proxy balancer://mycluster&gt;<br />
       <indent>

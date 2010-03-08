@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE manualpage SYSTEM "./style/manualpage.dtd">
 <?xml-stylesheet type="text/xsl" href="./style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 805050 $ -->
+<!-- $LastChangedRevision: 890440 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -382,7 +382,9 @@
       - for example, all .gif and .jpg files under any "images" directory could
       be written as "<code>/images/.*(jpg|gif)$</code>".  Apache uses Perl
       Compatible Regular Expressions provided by the <a
-      href="http://www.pcre.org/">PCRE</a> library.
+      href="http://www.pcre.org/">PCRE</a> library.  You can find more documentation
+      about PCRE's regular expression syntax at that site, or at
+      <a href="http://en.wikipedia.org/wiki/PCRE">Wikipedia</a>.
     </dd>
 
     <dt><a name="reverseproxy" id="reverseproxy">Reverse Proxy</a></dt>
@@ -398,6 +400,17 @@
       popular usage is <em>HTTPS</em>, i.e. the HyperText Transfer Protocol (HTTP)
       over SSL.<br />
       See: <a href="ssl/">SSL/TLS Encryption</a>
+    </dd>
+
+    <dt><a name="servernameindication" id="servernameindication">Server Name
+        Indication</a> <a name="sni" id="sni">(SNI)</a></dt>
+    <dd>An SSL function that allows passing the desired server
+      hostname in the initial SSL handshake message, so that the web
+      server can select the correct virtual host configuration to use
+      in processing the SSL handshake.  It was added to SSL starting
+      with the TLS extensions, RFC 3546.  <br />
+      See: <a href="ssl/ssl_faq.html">the SSL FAQ</a>
+      and <a href="http://www.ietf.org/rfc/rfc3546.txt">RFC 3546</a>
     </dd>
 
     <dt><a name="serversideincludes" id="serversideincludes">Server Side

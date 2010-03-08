@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 810189 $ -->
+<!-- $LastChangedRevision: 917236 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -1085,13 +1085,6 @@ The available <em>option</em>s are:</p>
     rather expensive operation. So one usually enables this option for
     CGI and SSI requests only.</p>
 </li>
-<li><code>CompatEnvVars</code>
-    <p>
-    When this option is enabled, additional CGI/SSI environment variables are
-    created for backward compatibility to other Apache SSL solutions. Look in
-    the <a href="../ssl/ssl_compat.html">Compatibility</a> chapter for details
-    on the particular variables generated.</p>
-</li>
 <li><code>ExportCertData</code>
     <p>
     When this option is enabled, additional CGI/SSI environment variables are
@@ -1148,7 +1141,7 @@ The available <em>option</em>s are:</p>
 <example><title>Example</title>
 SSLOptions +FakeBasicAuth -StrictRequire<br />
 &lt;Files ~ "\.(cgi|shtml)$"&gt;<br />
-    SSLOptions +StdEnvVars +CompatEnvVars -ExportCertData<br />
+    SSLOptions +StdEnvVars -ExportCertData<br />
 &lt;Files&gt;
 </example>
 </usage>
@@ -1473,7 +1466,12 @@ the proxy does not guarantee that the SSL connection to the backend
 server is "secure" beyond the fact that the certificate is signed by
 one of the CAs configured using the
 <directive>SSLProxyCACertificatePath</directive> and/or
-<directive>SSLProxyCACertificateFile</directive> directives.</p>
+<directive>SSLProxyCACertificateFile</directive> directives.
+In order to get this check done please have a look at
+<directive>SSLProxyCheckPeerCN</directive> and
+<directive>SSLProxyCheckPeerExpire</directive> directives which are off by
+default.
+</p>
 </note>
 
 <p>
@@ -1807,6 +1805,48 @@ separate "-engine" releases of OpenSSL 0.9.6 must be used.</p>
 # For a Broadcom accelerator:<br />
 SSLCryptoDevice ubsec
 </example>
+</usage>
+</directivesynopsis>
+
+<directivesynopsis>
+<name>SSLInsecureRenegotiation</name>
+<description>Option to enable support for insecure renegotiation</description>
+<syntax>SSLInsecureRenegotiation <em>flag</em></syntax>
+<default>SSLInsecureRenegotiation off</default>
+<contextlist><context>server config</context>
+<context>virtual host</context></contextlist>
+<compatibility>Available in httpd 2.2.15 and later, if using OpenSSL 0.9.8m or later</compatibility>
+
+<usage>
+<p>As originally specified, all versions of the SSL and TLS protocols
+(up to and including TLS/1.2) were vulnerable to a Man-in-the-Middle
+attack
+(<a href="http://cve.mitre.org/cgi-bin/cvename.cgi?name=CAN-2009-3555">CVE-2009-3555</a>)
+during a renegotiation.  This vulnerability allowed an attacker to
+"prefix" a chosen plaintext to the HTTP request as seen by the web
+server.  A protocol extension was developed which fixed this
+vulnerability if supported by both client and server.</p>
+
+<p>If <module>mod_ssl</module> is linked against OpenSSL version 1.0.0
+Beta 5 or later, by default renegotiation is only supported with
+clients supporting the new protocol extension.  If this directive is
+enabled, renegotiation will be allowed with old (unpatched) clients,
+albeit insecurely.</p>
+
+<note type="warning"><title>Security warning</title>
+<p>If this directive is enabled, SSL connections will be vulnerable to
+the Man-in-the-Middle prefix attack as described
+in <a href="http://cve.mitre.org/cgi-bin/cvename.cgi?name=CAN-2009-3555">CVE-2009-3555</a>.</p>
+</note>
+
+<example><title>Example</title>
+SSLInsecureRenegotiation on
+</example>
+
+<p>The <code>SSL_SECURE_RENEG</code> environment variable can be used
+from an SSI or CGI script to determine whether secure renegotiation is
+supported for a given SSL connection.</p>
+
 </usage>
 </directivesynopsis>
 
