@@ -7453,9 +7453,15 @@ static int dav_fixups(request_rec *r)
     return DECLINED;
 }
 
+APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(dav, AP, int, does_client_expect_auth,
+                                    (request_rec *r, int *auth_expected),
+                                    (r, auth_expected), OK, DECLINED)
+
 static int dav_check_user_id(request_rec *r)
 {
     dav_dir_conf *conf;
+    int auth_expected = 0;
+    
     conf = (dav_dir_conf *)ap_get_module_config(r->per_dir_config,
                                                 &dav_module);
     /* if DAV is not enabled, then we've got nothing to do */
@@ -7473,6 +7479,11 @@ static int dav_check_user_id(request_rec *r)
     }
 
     if (r->user)
+        return DECLINED;
+
+    dav_run_does_client_expect_auth(r, &auth_expected);
+
+    if (auth_expected)
         return DECLINED;
     
     r->user = "unauthenticated";
