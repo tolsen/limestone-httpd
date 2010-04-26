@@ -931,18 +931,21 @@ int ap_proxy_http_request(apr_pool_t *p, request_rec *r,
     if (r->main) {
         /* XXX: Why DON'T sub-requests use keepalives? */
         p_conn->close++;
-        if (old_cl_val) {
-            old_cl_val = NULL;
-            apr_table_unset(r->headers_in, "Content-Length");
+
+        if (r->method_number != M_POST) {
+            if (old_cl_val) {
+                old_cl_val = NULL;
+                apr_table_unset(r->headers_in, "Content-Length");
+            }
+            if (old_te_val) {
+                old_te_val = NULL;
+                apr_table_unset(r->headers_in, "Transfer-Encoding");
+            }
+            rb_method = RB_STREAM_CL;
+            e = apr_bucket_eos_create(input_brigade->bucket_alloc);
+            APR_BRIGADE_INSERT_TAIL(input_brigade, e);
+            goto skip_body;
         }
-        if (old_te_val) {
-            old_te_val = NULL;
-            apr_table_unset(r->headers_in, "Transfer-Encoding");
-        }
-        rb_method = RB_STREAM_CL;
-        e = apr_bucket_eos_create(input_brigade->bucket_alloc);
-        APR_BRIGADE_INSERT_TAIL(input_brigade, e);
-        goto skip_body;
     }
 
     /* WE only understand chunked.  Other modules might inject
