@@ -84,7 +84,6 @@ typedef struct {
     const char *rootpath;
     int locktimeout;
     int allow_depthinfinity;
-    int allow_unauthenticated_access;
     apr_array_header_t *rewrite_conds;
     apr_array_header_t *rewrite_rules;
 } dav_dir_conf;
@@ -227,7 +226,7 @@ static void *dav_create_dir_config(apr_pool_t *p, char *dir)
             d[l - 1] = '\0';
         conf->dir = d;
     }
-    conf->allow_unauthenticated_access = -1;
+
     conf->rewrite_conds = apr_array_make(p, 2, sizeof(dav_rewrite_entry));
     conf->rewrite_rules = apr_array_make(p, 2, sizeof(dav_rewrite_entry));
 
@@ -264,10 +263,6 @@ static void *dav_merge_dir_config(apr_pool_t *p, void *base, void *overrides)
     newconf->rootpath = DAV_INHERIT_VALUE(child, parent, rootpath);
     newconf->allow_depthinfinity = DAV_INHERIT_VALUE(parent, child,
                                                      allow_depthinfinity);
-    newconf->allow_unauthenticated_access = 
-        child->allow_unauthenticated_access == -1 ? 
-            parent->allow_unauthenticated_access : 
-            child->allow_unauthenticated_access;
 
     newconf->rewrite_conds = apr_array_append(p, child->rewrite_conds, 
                                                 parent->rewrite_conds);
@@ -7458,17 +7453,19 @@ static int dav_fixups(request_rec *r)
     return DECLINED;
 }
 
+APR_IMPLEMENT_OPTIONAL_HOOK_RUN_ALL(dav, AP, int, does_client_expect_auth,
+                                    (request_rec *r, int *auth_expected),
+                                    (r, auth_expected), OK, DECLINED)
+
 static int dav_check_user_id(request_rec *r)
 {
     dav_dir_conf *conf;
+    int auth_expected = 0;
+    
     conf = (dav_dir_conf *)ap_get_module_config(r->per_dir_config,
                                                 &dav_module);
     /* if DAV is not enabled, then we've got nothing to do */
     if (conf->provider == NULL) {
-        return DECLINED;
-    }
-
-    if (conf->allow_unauthenticated_access != 1) {
         return DECLINED;
     }
 
@@ -7482,6 +7479,11 @@ static int dav_check_user_id(request_rec *r)
     }
 
     if (r->user)
+        return DECLINED;
+
+    dav_run_does_client_expect_auth(r, &auth_expected);
+
+    if (auth_expected)
         return DECLINED;
     
     r->user = "unauthenticated";
@@ -7522,10 +7524,6 @@ static const command_rec dav_cmds[] =
     AP_INIT_FLAG("DAVDepthInfinity", dav_cmd_davdepthinfinity, NULL,
                  ACCESS_CONF|RSRC_CONF,
                  "allow Depth infinity PROPFIND requests"),
-
-    AP_INIT_FLAG("DAVUnauthenticatedAccess", ap_set_flag_slot,
-                 (void *)APR_OFFSETOF(dav_dir_conf, allow_unauthenticated_access), ACCESS_CONF,
-                 "Disable this module's authorization and authentication hacks for this location"),
 
     AP_INIT_TAKE2("DAVResponseRewriteCond", dav_cmd_davresponserewritecond, NULL,
                   ACCESS_CONF|RSRC_CONF, "response uri rewrite condition"),

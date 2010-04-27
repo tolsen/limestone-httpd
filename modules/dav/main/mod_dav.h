@@ -2913,6 +2913,23 @@ typedef struct _dav_request dav_request;
 typedef struct _dav_method dav_method;
 typedef struct _dav_all_methods dav_all_methods;
 
+/* --------------------------------------------------------------------
+**
+** hooks to allow for unauthenticated access
+*/
+
+/* hook to signal whether client is expecting authentication. e.g.,
+ * because Authorization header is set or a cookie is set.
+ *
+ * Set expected if expecting authentication.  Otherwise, leave
+ * auth_expected alone.  Do not set it to 0 as some other hook may
+ * have already set it and we will want to see that.  You may return
+ * early if auth_expected is already set.
+*/
+   
+APR_DECLARE_EXTERNAL_HOOK(dav, AP, int, does_client_expect_auth,
+                          (request_rec *r, int *auth_expected))
+
 #ifdef __cplusplus
 }
 #endif
