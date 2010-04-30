@@ -932,7 +932,7 @@ int ap_proxy_http_request(apr_pool_t *p, request_rec *r,
         /* XXX: Why DON'T sub-requests use keepalives? */
         p_conn->close++;
 
-        if (r->method_number != M_POST) {
+        if (r->method_number != M_POST && r->method_number != M_PUT) {
             if (old_cl_val) {
                 old_cl_val = NULL;
                 apr_table_unset(r->headers_in, "Content-Length");
