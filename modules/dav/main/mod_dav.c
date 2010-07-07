@@ -139,7 +139,7 @@ int dav_get_permission_denied_status(request_rec *r) {
     dav_principal *prin = dav_principal_make_from_request(r);
     if(prin->type == PRINCIPAL_UNAUTHENTICATED) {
         if (!apr_table_get(r->notes, "mod_dav_unauth_set_headers")) {
-            apr_table_setn(r->notes, "mod_dav_unauth_set_headers", (char *)1);
+            apr_table_setn(r->notes, "mod_dav_unauth_set_headers", "true");
             /* Set the authentication headers. If needed, issue the client a fresh challenge */
             return ap_run_check_user_id(r);
         }
