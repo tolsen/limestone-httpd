@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 917013 $ -->
+<!-- $LastChangedRevision: 923738 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -585,6 +585,7 @@ LastModified date.</description>
 <default>CacheLock off</default>
 <contextlist><context>server config</context><context>virtual host</context>
 </contextlist>
+<compatibility>Available in Apache 2.2.15 and later</compatibility>
 
 <usage>
   <p>The <directive>CacheLock</directive> directive enables the thundering herd lock
