@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 916091 $ -->
+<!-- $LastChangedRevision: 920409 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -804,6 +804,7 @@ authenticating the user if this one fails</description>
 <name>AuthLDAPGroupAttribute</name>
 <description>LDAP attributes used to check for group membership</description>
 <syntax>AuthLDAPGroupAttribute <em>attribute</em></syntax>
+<default>AuthLDAPGroupAttribute member uniquemember</default>
 <contextlist><context>directory</context><context>.htaccess</context>
 </contextlist>
 <override>AuthConfig</override>

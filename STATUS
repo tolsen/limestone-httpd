@@ -1,5 +1,5 @@
 APACHE 2.2 STATUS:                                              -*-text-*-
-Last modified at [$Date: 2010-03-01 23:55:45 -0500 (Mon, 01 Mar 2010) $]
+Last modified at [$Date: 2010-07-21 14:11:07 -0400 (Wed, 21 Jul 2010) $]
 
 The current version of this file can be found at:
 
@@ -10,14 +10,12 @@ Documentation status is maintained separately and can be found at:
   * docs/STATUS in this source tree, or
   * http://svn.apache.org/repos/asf/httpd/httpd/trunk/docs/STATUS
 
-Consult the following STATUS files for information on related projects:
+The current development branch of this software can be found at:
 
-  * http://svn.apache.org/repos/asf/apr/apr/trunk/STATUS
-  * http://svn.apache.org/repos/asf/apr/apr-util/trunk/STATUS
+  * http://svn.apache.org/repos/asf/httpd/httpd/trunk
 
 Patches considered for backport are noted in their branches' STATUS:
 
-  * http://svn.apache.org/repos/asf/httpd/httpd/branches/1.3.x/STATUS
   * http://svn.apache.org/repos/asf/httpd/httpd/branches/2.0.x/STATUS
   * http://svn.apache.org/repos/asf/httpd/httpd/branches/2.2.x/STATUS
 
@@ -25,7 +23,8 @@ Patches considered for backport are noted in their branches' STATUS:
 Release history:
     [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
           while x.{even}.z versions are Stable/GA releases.]
-    2.2.15  : Tagged March 1, 2010
+    2.2.16  : In maintenance
+    2.2.15  : Released March 6, 2010.
     2.2.14  : Released October 3, 2009.
     2.2.13  : Released August 8, 2009.
     2.2.12  : Released July 28, 2009.
@@ -101,6 +100,143 @@ PATCHES PROPOSED TO BACKPORT FROM TRUNK:
    sf:        Couldn't the linux 2.4 bug be worked around by calling access
               twice? Once with R_OK and once with X_OK.
 
+  * mod_log_config: Make ${cookie}C correctly match whole cookie names
+    instead of substrings.
+    PR: 28037
+    Trunk patch: http://svn.apache.org/viewvc?rev=833738&view=rev
+                 http://svn.apache.org/viewvc?rev=834006&view=rev
+                 http://svn.apache.org/viewvc?rev=834013&view=rev
+                 http://svn.apache.org/viewvc?rev=834500&view=rev
+    2.2.x patch: http://people.apache.org/~sf/log_cookie_28037.diff
+    +1: sf
+
+  * mod_req-timeout/core: Backport bugfixes from trunk up to r935339:
+    - Do not wrongly enforce timeouts for mod_proxy's backend
+      connections and other protocol handlers (like mod_ftp).
+    - Enforce the timeout for AP_MODE_GETLINE.
+    - If there is a timeout, shorten the lingering close time from 30 to
+      2 seconds (involves a change in the core).
+    Trunk patch: http://svn.apache.org/viewvc?rev=921378&view=rev
+                 http://svn.apache.org/viewvc?rev=921526&view=rev
+                 http://svn.apache.org/viewvc?rev=922407&view=rev
+                 http://svn.apache.org/viewvc?rev=923418&view=rev
+                 http://svn.apache.org/viewvc?rev=923429&view=rev
+                 http://svn.apache.org/viewvc?rev=925986&view=rev
+                 http://svn.apache.org/viewvc?rev=928881&view=rev
+                 http://svn.apache.org/viewvc?rev=933341&view=rev
+                 http://svn.apache.org/viewvc?rev=933547&view=rev
+                 http://svn.apache.org/viewvc?rev=935339&view=rev
+    2.2.x patch: http://people.apache.org/~sf/mod_reqtimeout_up_to_r935339-v2.diff
+    sf: It would be nice if someone could review this specifically WRT Windows
+        compatibility.
+    +1: sf
+
+  * prefork MPM: Run cleanups for final request when process exits gracefully.
+    PR: 43857
+    Trunk patch: http://svn.apache.org/viewvc?rev=943650&view=rev
+    2.2.x patch: Trunk patch works
+    (on hold) +1: trawick, rjung
+    jorton points out that the problem symptom was probably the reslist
+    issue, which may have a better fix; also, this change could hide 
+    other problems:
+      http://www.mail-archive.com/dev@apr.apache.org/msg23090.html
+
+  * mod_proxy_balancer: Force workers into PROXY_WORKER_IN_ERROR when configured
+    statuses are found
+    PR: 48939
+    Trunk patch: http://svn.apache.org/viewvc?rev=930125&view=rev
+    2.2.x patch: https://issues.apache.org/bugzilla/attachment.cgi?id=25153
+    Submitted by: Daniel Ruggeri <DRuggeri primary.net>
+    +1: niq, jim
+    trawick suggests:
+      1. somebody write doc (Daniel volunteers)
+      2. somebody create new patch which includes r962972, any
+          subsequent changes, and doc (Daniel volunteers)
+
+  * mod_disk_cache: Decline the opportunity to cache if the response is
+    a 206 Partial Content. This stops a reverse proxied partial response
+    from becoming cached, and then being served in subsequent responses.
+    Trunk patch: http://svn.apache.org/viewvc?rev=951222&view=rev
+    2.2.x patch: http://people.apache.org/~minfrin/httpd-cache-partial-2.2.patch
+    +1: minfrin
+    niq asks: I can see the logic of not cacheing partial responses,
+    but why should mod_disk_cache worry about them if mod_cache allows
+    them, as in the following proposal?
+
+  *) mod_cache: Explicitly allow cache implementations to cache a 206 Partial
+     Response if they so choose to do so. Previously an attempt to cache a 206
+     was arbitrarily allowed if the response contained an Expires or
+     Cache-Control header, and arbitrarily denied if both headers were missing.
+     Trunk patch: http://svn.apache.org/viewvc?rev=952823&view=rev
+     2.2.x Patch: http://people.apache.org/~minfrin/httpd-cache-partial2-2.2.patch
+     +1: minfrin
+
+  *) mod_headers: support global replace in Header Edit
+     PR 46594 (not 47066 as incorrectly recorded in change log)
+     trunk: http://svn.eu.apache.org/viewvc?view=revision&revision=894036
+            http://svn.apache.org/viewvc?view=revision&revision=966059
+     2.2.x: http://people.apache.org/~niq/patches/46594.patch
+                              (newly updated to fold in r966059)
+     +1: niq
+
+  * core: Pass the output filter information to newly created sub requests;
+    as these are later on used as true requests with an internal redirect.
+    This allows for mod_cache et.al. to trap the results of the redirect.
+    Furthermore adjust the output filter chain correctly in an internal
+    redirect from a subrequest, preserving filters from the main request as
+    necessary.
+    PR 17629, PR 43939
+    Hint: Both PR need all revisions applied neither can be fixed by a subset
+    of the revisions below.
+     Trunk version of patch:
+        http://svn.apache.org/viewcvs.cgi?rev=620133&view=rev
+        http://svn.apache.org/viewcvs.cgi?rev=724515&view=rev
+        http://svn.apache.org/viewcvs.cgi?rev=725077&view=rev
+        http://svn.apache.org/viewcvs.cgi?rev=952828&view=rev
+     Backport version for 2.2.x of patch:
+        Trunk version of patch works
+     +1: rpluem, jim
+
+   * Core: fix symlinks ownership tests
+     PR 36783
+     Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=632947
+     2.2 patch: trunk patch Works with offset.
+     +1: niq
+
+   * Protocol: Reject requests containing (invalid) NULL characters
+     in request line or request headers.
+     PR 43039
+     Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=892678
+     2.2 patch: trunk patch Works with offset.
+     +1: niq
+     -1: fielding: this routine is hand-optimized for speed, and the
+         "solution" is to add an if (strlen(*s) < bytes_handled - 1)
+         to every single line read?  Seriously?  If we want to have
+         ap_rgetline_core() enforce validity, then we should be using a
+         stop character array and error on all control characters not
+         allowed by HTTP.
+
+   * core: (re)-introduce -T commandline option to suppress documentroot
+     check at startup
+     PR 41887
+     Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=893027
+     2.2 patch: trunk patch Works with offset.
+     +1: niq
+
+   * VHosts: fix parsing of pure-numeric hostname.
+     PR 44979
+     Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=892172
+     2.2 patch: trunk patch Works with offset.
+     +1: niq
+
+   * config: fix/optimize SSL connections for IE6 browsers
+     PR 49484
+     Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=966055
+     2.2 patch: should apply cleanly
+     +1: gstein
+
+PATCHES/ISSUES THAT ARE STALLED
+
   * core: Support wildcards in both the directory and file components of
     the path specified by the Include directive.
     Trunk patch: http://svn.apache.org/viewvc?rev=909878&view=rev
@@ -108,20 +244,10 @@ PATCHES PROPOSED TO BACKPORT FROM TRUNK:
                  http://svn.apache.org/viewvc?rev=917759&view=rev
     2.2.x patch: http://people.apache.org/~minfrin/httpd-wildcard+docs2.patch
     Submitted by: minfrin, poirier
-    +1: minfrin
-
-  * support/htcacheclean: Teach it how to write a pid file (modelled on
-    httpd's writing of a pid file) so that it becomes possible to run
-    more than one instance of htcacheclean on the same machine.
-    Trunk patch: http://svn.apache.org/viewvc?rev=910705&view=rev
-                 http://svn.apache.org/viewvc?rev=910735&view=rev
-                 http://svn.apache.org/viewvc?rev=910756&view=rev
-                 http://svn.apache.org/viewvc?rev=917002&view=rev
-                 http://svn.apache.org/viewvc?rev=917005&view=rev
-    2.2.x patch: http://people.apache.org/~minfrin/htcacheclean-pid.patch
-    +1: minfrin, sf
-
-PATCHES/ISSUES THAT ARE STALLED
+    +1: minfrin, jim, poirier
+    -1: wrowe [This introduces new invalid paths which do not resolve to any
+               configuration file paths, increasing the probability of unreported
+               syntax errors to further confuse the administrator.]
 
   * srclib/pcre and vendor/pcre
     http://www.vuxml.org/freebsd/pkg-pcre.html
@@ -191,16 +317,7 @@ PATCHES/ISSUES THAT ARE STALLED
               need to be added to this. See also
               http://mail-archives.apache.org/mod_mbox/httpd-dev/200607.mbox/%3c20060723093125.GA19423@redhat.com%3e
               and follow ups for more details.
-
- * mod_dir: add FallbackResource directive
-   PR 47184
-   Trunk patch: http://svn.apache.org/viewvc?view=rev&revision=785425
-                http://svn.apache.org/viewvc?view=rev&revision=795450
-   2.2.x patch: http://people.apache.org/~niq/patches/47184.patch
-                (identical but for offsets, but patch failed on trunk version)
-                plus docs patch from r795450
-   +1: niq
-   +1: rbowen - After much debate on IRC, we've agreed on FallbackResource as being the right name for this.
+      needs r930063 to avoid a memory leak, +1 with r930063.      
 
  * prefork MPM: simple patch to enable mod_privileges.
    trunk: N/A (this patch substitutes for the availability of
