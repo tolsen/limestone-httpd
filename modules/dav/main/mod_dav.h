@@ -2912,6 +2912,7 @@ typedef struct {
 typedef struct _dav_request dav_request;
 typedef struct _dav_method dav_method;
 typedef struct _dav_all_methods dav_all_methods;
+typedef struct _cache dav_cache;
 
 /* --------------------------------------------------------------------
 **

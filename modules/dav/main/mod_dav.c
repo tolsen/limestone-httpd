@@ -116,20 +116,42 @@ dav_principal *dav_principal_make_from_request(request_rec *r)
     return principal;
 }
 
+struct _cache {
+    apr_hash_t *resource_cache;    
+};
+
+#define AHKS APR_HASH_KEY_STRING
+
+static dav_cache *dav_get_cache(request_rec *r)
+{
+    // we need the root request_rec    
+    request_rec *root = r;
+    while(root->main) {
+        root = root->main;
+    }
+
+    return (dav_cache *)apr_table_get(root->notes, "dav_cache");
+}
+
 dav_principal* dav_principal_make_from_url(request_rec *r, 
                                            const char *url)
 {
     dav_principal *principal = NULL;
     dav_resource *resource = NULL;
 
-    if (url) {
+    dav_cache *cache = dav_get_cache(r);
+    if (url && !(resource = (dav_resource *)apr_hash_get(cache->resource_cache,
+                                                            url, AHKS))) {
         dav_get_resource_from_uri(apr_pstrcat(r->pool, url, "?no_rewrite", NULL),
                                   r, ALLOW_CROSS_DOMAIN, NULL, &resource);
-        if(resource && resource->exists && resource->type == DAV_RESOURCE_TYPE_PRINCIPAL ) {
-            principal = apr_pcalloc(r->pool, sizeof(dav_principal));
-            principal->type = PRINCIPAL_HREF;
-            principal->resource = resource;
-        }
+           
+    }
+
+    if(resource && resource->exists && resource->type == DAV_RESOURCE_TYPE_PRINCIPAL ) {
+        apr_hash_set(cache->resource_cache, url, AHKS, resource);
+        principal = apr_pcalloc(r->pool, sizeof(dav_principal));
+        principal->type = PRINCIPAL_HREF;
+        principal->resource = resource;
     }
 
     return principal;
@@ -7098,6 +7120,13 @@ static void dav_add_method(dav_all_methods *methods, int method_number, dav_meth
     apr_hash_set(methods->method_hash, buf, sizeof(*buf), m);
 }
 
+void dav_init_cache(request_rec *r) 
+{
+    dav_cache *cache = (dav_cache *)apr_pcalloc(r->pool, sizeof(*cache));
+    cache->resource_cache = apr_hash_make(r->pool);
+    apr_table_setn(r->notes, "dav_cache", (char *)cache);
+}
+
 dav_all_methods *dav_all_methods_new(apr_pool_t *p)
 {
     dav_all_methods *retVal;
@@ -7177,7 +7206,6 @@ static int dav_init_handler(apr_pool_t *p, apr_pool_t *plog, apr_pool_t *ptemp,
 
     /* Register DAV methods */
     dav_registered_methods = dav_all_methods_new(p);
-
     ap_add_version_component(p, "DAV/2");
 
     return OK;
@@ -7350,6 +7378,8 @@ static int dav_handler(request_rec *r)
     /* keep a backup of request_rec */ 	 	 
 
     /* dispatch the appropriate method handler */
+    dav_init_cache(r);
+
     retVal = dav_dispatch_method(r);
     while(retVal == HTTP_SERVICE_UNAVAILABLE && num_tries < DAV_REQ_MAX_TRIES) {
         /* revert to the original request_rec */
