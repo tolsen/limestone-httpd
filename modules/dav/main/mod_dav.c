@@ -126,7 +126,7 @@ static dav_cache *dav_get_cache(request_rec *r)
 {
     // we need the root request_rec    
     request_rec *root = r;
-    while(root->main) {
+    while(root->main && !root->notes) {
         root = root->main;
     }
 
@@ -140,15 +140,17 @@ dav_principal* dav_principal_make_from_url(request_rec *r,
     dav_resource *resource = NULL;
 
     dav_cache *cache = dav_get_cache(r);
-    if (url && !(resource = (dav_resource *)apr_hash_get(cache->resource_cache,
-                                                            url, AHKS))) {
+    if (!cache || (url && !(resource = (dav_resource *)apr_hash_get(cache->resource_cache,
+                                                            url, AHKS)))) {
         dav_get_resource_from_uri(apr_pstrcat(r->pool, url, "?no_rewrite", NULL),
                                   r, ALLOW_CROSS_DOMAIN, NULL, &resource);
            
     }
 
     if(resource && resource->exists && resource->type == DAV_RESOURCE_TYPE_PRINCIPAL ) {
-        apr_hash_set(cache->resource_cache, url, AHKS, resource);
+        if (cache) {
+            apr_hash_set(cache->resource_cache, url, AHKS, resource);
+        }
         principal = apr_pcalloc(r->pool, sizeof(dav_principal));
         principal->type = PRINCIPAL_HREF;
         principal->resource = resource;
