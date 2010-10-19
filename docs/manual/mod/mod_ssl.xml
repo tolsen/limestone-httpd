@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 963430 $ -->
+<!-- $LastChangedRevision: 999854 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -1781,7 +1781,7 @@ string. In particular, this may cause the environment variable
 any of the <a href="#envvars">SSL environment variables</a>.</p>
 
 <p>Note that this directive has no effect if the
-<code>FakeBasic</code> option is used (see <a
+<code>FakeBasicAuth</code> option is used (see <a
 href="#ssloptions">SSLOptions</a>).</p>
 
 <example><title>Example</title>

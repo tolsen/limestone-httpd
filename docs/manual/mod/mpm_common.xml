@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 706316 $ -->
+<!-- $LastChangedRevision: 1005975 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -866,7 +866,7 @@ client connections</description>
 <contextlist><context>server config</context></contextlist>
 <modulelist><module>mpm_netware</module>
 <module>mpm_winnt</module>
-<module>worker</module>
+<module>worker</module> <module>event</module>
 </modulelist>
 <compatibility>Available in Apache 2.1 and later</compatibility>
 
@@ -898,9 +898,15 @@ client connections</description>
       of adjustment should only be made in a test environment which allows
       the full set of web server processing can be exercised, as there
       may be infrequent requests which require more stack to process.
-      A change in the web server configuration can invalidate the
-      current <directive>ThreadStackSize</directive> setting.</li>
+      The minumum required stack size strongly depends on the modules
+      used, but any change in the web server configuration can invalidate
+      the current <directive>ThreadStackSize</directive> setting.</li>
     </ul>
+
+    <note>It is recommended to not reduce <directive>ThreadStackSize</directive>
+    unless a high number of threads per child process is needed. On some
+    platforms (including Linux), a setting of 128000 is already too low and
+    causes crashes with some common modules.</note>
 </usage>
 </directivesynopsis>
 

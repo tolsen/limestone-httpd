@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 928928 $ -->
+<!-- $LastChangedRevision: 990096 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -801,7 +801,7 @@ subdirectories</description>
     <p><directive type="section">DirectoryMatch</directive> and
     <code>&lt;/DirectoryMatch&gt;</code> are used to enclose a group
     of directives which will apply only to the named directory and
-    sub-directories of that directory, the same as <directive
+    <em>sub-directories of that directory</em>, the same as <directive
     module="core" type="section">Directory</directive>. However, it
     takes as an argument a <glossary ref="regex">regular 
     expression</glossary>. For example:</p>
@@ -812,6 +812,11 @@ subdirectories</description>
 
     <p>would match directories in <code>/www/</code> that consisted of three
     numbers.</p>
+
+    <note><title>End-of-line character</title>
+      <p>The end-of-line character ($) cannot be matched with this directive.</p>
+    </note>
+
 </usage>
 <seealso><directive type="section" module="core">Directory</directive> for
 a description of how regular expressions are mixed in with normal
@@ -1098,12 +1103,15 @@ in case of an error</description>
     </example>
 
     <p>If the <var>file-path</var>
-    begins with a pipe (|) then it is assumed to be a command to spawn
-    to handle the error log.</p>
+    begins with a pipe character "<code>|</code>" then it is assumed to be a
+    command to spawn to handle the error log.</p>
 
     <example><title>Example</title>
     ErrorLog "|/usr/local/bin/httpd_errors"
     </example>
+
+    <p>See the notes on <a href="../logs.html#piped">piped logs</a> for
+    more information.</p>
 
     <p>Using <code>syslog</code> instead of a filename enables logging
     via syslogd(8) if the system supports it. The default is to use
@@ -2257,10 +2265,12 @@ hosting</description>
     </example>
 
     <p>To receive requests on all interfaces, you can use an argument of
-    <code>*</code></p>
+    <code>*:80</code>, or, if you are listening on multiple ports and
+    really want the server to respond on all of them with a particular
+    set of virtual hosts, <code>*</code></p>
 
     <example>
-      NameVirtualHost *
+      NameVirtualHost *:80
     </example>
 
     <note><title>Argument to <directive type="section">VirtualHost</directive>
@@ -2817,10 +2827,12 @@ to name-virtual hosts</description>
       ServerName server.domain.com<br />
       ServerAlias server server2.domain.com server2<br />
       ServerAlias *.example.com<br />
+      UseCanonicalName Off<br />
       # ...<br />
       &lt;/VirtualHost&gt;
     </example>
 </usage>
+<seealso><directive module="core">UseCanonicalName</directive></seealso>
 <seealso><a href="../vhosts/">Apache Virtual Host documentation</a></seealso>
 </directivesynopsis>
 
