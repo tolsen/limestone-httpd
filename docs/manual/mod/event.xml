@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 421100 $ -->
+<!-- $LastChangedRevision: 1021735 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -98,12 +98,6 @@ MPM</description>
 
     </ul>
 </section>
-
-<section id="issues"><title>Issues</title>
-    <p>At present, this MPM is incompatible with <module>mod_ssl</module>, and
-    other input filters.</p>
-</section>
-
 
 <directivesynopsis location="mpm_common"><name>AcceptMutex</name>
 </directivesynopsis>

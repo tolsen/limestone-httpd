@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!DOCTYPE modulesynopsis SYSTEM "../style/modulesynopsis.dtd">
 <?xml-stylesheet type="text/xsl" href="../style/manual.en.xsl"?>
-<!-- $LastChangedRevision: 965799 $ -->
+<!-- $LastChangedRevision: 989598 $ -->
 
 <!--
  Licensed to the Apache Software Foundation (ASF) under one or more
@@ -85,7 +85,7 @@
 
     <tr><td><code>%{<var>Foobar</var>}C</code></td>
         <td>The contents of cookie <var>Foobar</var> in the request sent
-        to the server.</td></tr>
+        to the server. Only version 0 cookies are fully supported.</td></tr>
 
     <tr><td><code>%D</code></td>
         <td>The time taken to serve the request, in microseconds.</td></tr>
@@ -377,7 +377,8 @@
       <dt><var>pipe</var></dt>
       <dd>The pipe character "<code>|</code>", followed by the path
       to a program to receive the log information on its standard
-      input.
+      input. See the notes on <a href="../logs.html#piped">piped logs</a>
+      for more information.
 
       <note type="warning"><title>Security:</title>
       <p>If a program is used, then it will be run as the user who

@@ -1,5 +1,5 @@
 APACHE 2.2 STATUS:                                              -*-text-*-
-Last modified at [$Date: 2010-07-21 14:11:07 -0400 (Wed, 21 Jul 2010) $]
+Last modified at [$Date: 2010-10-14 12:33:02 -0400 (Thu, 14 Oct 2010) $]
 
 The current version of this file can be found at:
 
@@ -23,7 +23,9 @@ Patches considered for backport are noted in their branches' STATUS:
 Release history:
     [NOTE that x.{odd}.z versions are strictly Alpha/Beta releases,
           while x.{even}.z versions are Stable/GA releases.]
-    2.2.16  : In maintenance
+    2.2.18  : In maintainance
+    2.2.17  : Tagged October 14, 2010.
+    2.2.16  : Released July 25, 2010.
     2.2.15  : Released March 6, 2010.
     2.2.14  : Released October 3, 2009.
     2.2.13  : Released August 8, 2009.
@@ -83,8 +85,10 @@ CURRENT RELEASE NOTES:
 RELEASE SHOWSTOPPERS:
 
 
+
 PATCHES ACCEPTED TO BACKPORT FROM TRUNK:
   [ start all new proposals below, under PATCHES PROPOSED. ]
+
 
 
 PATCHES PROPOSED TO BACKPORT FROM TRUNK:
@@ -99,61 +103,9 @@ PATCHES PROPOSED TO BACKPORT FROM TRUNK:
               vs 2.6 kernels, potentially a suspect test for root.
    sf:        Couldn't the linux 2.4 bug be worked around by calling access
               twice? Once with R_OK and once with X_OK.
+   wrowe:     It would seem we only need to test for X_OK?
 
-  * mod_log_config: Make ${cookie}C correctly match whole cookie names
-    instead of substrings.
-    PR: 28037
-    Trunk patch: http://svn.apache.org/viewvc?rev=833738&view=rev
-                 http://svn.apache.org/viewvc?rev=834006&view=rev
-                 http://svn.apache.org/viewvc?rev=834013&view=rev
-                 http://svn.apache.org/viewvc?rev=834500&view=rev
-    2.2.x patch: http://people.apache.org/~sf/log_cookie_28037.diff
-    +1: sf
-
-  * mod_req-timeout/core: Backport bugfixes from trunk up to r935339:
-    - Do not wrongly enforce timeouts for mod_proxy's backend
-      connections and other protocol handlers (like mod_ftp).
-    - Enforce the timeout for AP_MODE_GETLINE.
-    - If there is a timeout, shorten the lingering close time from 30 to
-      2 seconds (involves a change in the core).
-    Trunk patch: http://svn.apache.org/viewvc?rev=921378&view=rev
-                 http://svn.apache.org/viewvc?rev=921526&view=rev
-                 http://svn.apache.org/viewvc?rev=922407&view=rev
-                 http://svn.apache.org/viewvc?rev=923418&view=rev
-                 http://svn.apache.org/viewvc?rev=923429&view=rev
-                 http://svn.apache.org/viewvc?rev=925986&view=rev
-                 http://svn.apache.org/viewvc?rev=928881&view=rev
-                 http://svn.apache.org/viewvc?rev=933341&view=rev
-                 http://svn.apache.org/viewvc?rev=933547&view=rev
-                 http://svn.apache.org/viewvc?rev=935339&view=rev
-    2.2.x patch: http://people.apache.org/~sf/mod_reqtimeout_up_to_r935339-v2.diff
-    sf: It would be nice if someone could review this specifically WRT Windows
-        compatibility.
-    +1: sf
-
-  * prefork MPM: Run cleanups for final request when process exits gracefully.
-    PR: 43857
-    Trunk patch: http://svn.apache.org/viewvc?rev=943650&view=rev
-    2.2.x patch: Trunk patch works
-    (on hold) +1: trawick, rjung
-    jorton points out that the problem symptom was probably the reslist
-    issue, which may have a better fix; also, this change could hide 
-    other problems:
-      http://www.mail-archive.com/dev@apr.apache.org/msg23090.html
-
-  * mod_proxy_balancer: Force workers into PROXY_WORKER_IN_ERROR when configured
-    statuses are found
-    PR: 48939
-    Trunk patch: http://svn.apache.org/viewvc?rev=930125&view=rev
-    2.2.x patch: https://issues.apache.org/bugzilla/attachment.cgi?id=25153
-    Submitted by: Daniel Ruggeri <DRuggeri primary.net>
-    +1: niq, jim
-    trawick suggests:
-      1. somebody write doc (Daniel volunteers)
-      2. somebody create new patch which includes r962972, any
-          subsequent changes, and doc (Daniel volunteers)
-
-  * mod_disk_cache: Decline the opportunity to cache if the response is
+ * mod_disk_cache: Decline the opportunity to cache if the response is
     a 206 Partial Content. This stops a reverse proxied partial response
     from becoming cached, and then being served in subsequent responses.
     Trunk patch: http://svn.apache.org/viewvc?rev=951222&view=rev
@@ -162,6 +114,8 @@ PATCHES PROPOSED TO BACKPORT FROM TRUNK:
     niq asks: I can see the logic of not cacheing partial responses,
     but why should mod_disk_cache worry about them if mod_cache allows
     them, as in the following proposal?
+    rpluem says: As poirier correctly mentions, the same must be done for mod_mem_cache
+    as well.
 
   *) mod_cache: Explicitly allow cache implementations to cache a 206 Partial
      Response if they so choose to do so. Previously an attempt to cache a 206
@@ -170,70 +124,29 @@ PATCHES PROPOSED TO BACKPORT FROM TRUNK:
      Trunk patch: http://svn.apache.org/viewvc?rev=952823&view=rev
      2.2.x Patch: http://people.apache.org/~minfrin/httpd-cache-partial2-2.2.patch
      +1: minfrin
-
-  *) mod_headers: support global replace in Header Edit
-     PR 46594 (not 47066 as incorrectly recorded in change log)
-     trunk: http://svn.eu.apache.org/viewvc?view=revision&revision=894036
-            http://svn.apache.org/viewvc?view=revision&revision=966059
-     2.2.x: http://people.apache.org/~niq/patches/46594.patch
-                              (newly updated to fold in r966059)
-     +1: niq
-
-  * core: Pass the output filter information to newly created sub requests;
-    as these are later on used as true requests with an internal redirect.
-    This allows for mod_cache et.al. to trap the results of the redirect.
-    Furthermore adjust the output filter chain correctly in an internal
-    redirect from a subrequest, preserving filters from the main request as
-    necessary.
-    PR 17629, PR 43939
-    Hint: Both PR need all revisions applied neither can be fixed by a subset
-    of the revisions below.
-     Trunk version of patch:
-        http://svn.apache.org/viewcvs.cgi?rev=620133&view=rev
-        http://svn.apache.org/viewcvs.cgi?rev=724515&view=rev
-        http://svn.apache.org/viewcvs.cgi?rev=725077&view=rev
-        http://svn.apache.org/viewcvs.cgi?rev=952828&view=rev
-     Backport version for 2.2.x of patch:
-        Trunk version of patch works
-     +1: rpluem, jim
-
-   * Core: fix symlinks ownership tests
-     PR 36783
-     Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=632947
-     2.2 patch: trunk patch Works with offset.
-     +1: niq
-
-   * Protocol: Reject requests containing (invalid) NULL characters
-     in request line or request headers.
-     PR 43039
-     Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=892678
-     2.2 patch: trunk patch Works with offset.
-     +1: niq
-     -1: fielding: this routine is hand-optimized for speed, and the
-         "solution" is to add an if (strlen(*s) < bytes_handled - 1)
-         to every single line read?  Seriously?  If we want to have
-         ap_rgetline_core() enforce validity, then we should be using a
-         stop character array and error on all control characters not
-         allowed by HTTP.
-
-   * core: (re)-introduce -T commandline option to suppress documentroot
-     check at startup
-     PR 41887
-     Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=893027
-     2.2 patch: trunk patch Works with offset.
-     +1: niq
-
-   * VHosts: fix parsing of pure-numeric hostname.
-     PR 44979
-     Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=892172
-     2.2 patch: trunk patch Works with offset.
-     +1: niq
+     -1: rpluem: Until the patch proposal above for mod_disk_cache is backported
+                 and a similar patch for mod_mem_cache is proposed (no backport
+                 possible since mod_mem_cache is no longer in trunk) and
+                 committed.
 
    * config: fix/optimize SSL connections for IE6 browsers
      PR 49484
      Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=966055
      2.2 patch: should apply cleanly
      +1: gstein
+     -0: sf: If we change it, then change it to something that will be OK for
+         MSIE 10, too. Also, some people recommend keeping ssl-unclean-shutdown
+         for newer versions of MSIE.
+         See http://marc.info/?l=apache-httpd-dev&m=127970632901262&w=2 and
+         the links therein.
+
+   * mod_cache: Check the request to determine whether we are allowed
+     to return cached content at all, and respect a "Cache-Control:
+     no-cache" header from a client. Previously, "no-cache" would
+     behave like "max-age=0".
+     Trunk patch: http://svn.apache.org/viewvc?view=revision&revision=992625
+     2.2.x patch: trunk patch works
+     +1: minfrin
 
 PATCHES/ISSUES THAT ARE STALLED
 
@@ -325,4 +238,3 @@ PATCHES/ISSUES THAT ARE STALLED
    2.2.x patch:
       http://people.apache.org/~niq/patches/2.2mod_privileges-core-patch
    +1: niq
-
