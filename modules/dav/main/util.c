@@ -33,7 +33,9 @@
 #include "http_log.h"
 #include "http_protocol.h"
 
-#define MAX_TRACE_FRAMES 20
+#include <execinfo.h>   // for backtrace
+
+#define MAX_TRACE_FRAMES 30
 
 static void log_trace() {
     void *array[MAX_TRACE_FRAMES];
@@ -41,7 +43,11 @@ static void log_trace() {
 
     size_t size = backtrace(array, MAX_TRACE_FRAMES);
     char **lines = backtrace_symbols(array, size);
-    
+   
+    if(!lines) {
+        DBG0("Failed to get Backtrace symbols due to insufficient memory");
+        return;
+    }
 
     DBG0("Backtrace:");
 
