@@ -33,6 +33,31 @@
 #include "http_log.h"
 #include "http_protocol.h"
 
+#include <execinfo.h>   // for backtrace
+
+#define MAX_TRACE_FRAMES 30
+
+static void log_trace() {
+    void *array[MAX_TRACE_FRAMES];
+    size_t i;
+
+    size_t size = backtrace(array, MAX_TRACE_FRAMES);
+    char **lines = backtrace_symbols(array, size);
+   
+    if(!lines) {
+        DBG0("Failed to get Backtrace symbols due to insufficient memory");
+        return;
+    }
+
+    DBG0("Backtrace:");
+
+    for(i=0; i<size; i++) {
+        DBG1("%s", lines[i]);
+    }
+
+    free(lines);
+}
+
 DAV_DECLARE(dav_error*) dav_new_error(apr_pool_t *p, int status,
                                       int error_id, const char *desc)
 {
@@ -40,6 +65,11 @@ DAV_DECLARE(dav_error*) dav_new_error(apr_pool_t *p, int status,
     dav_error *err = apr_pcalloc(p, sizeof(*err));
 
     /* DBG3("dav_new_error: %d %d %s", status, error_id, desc ? desc : "(no desc)"); */
+
+    /* if status is 500, log a backtrace */
+    if (status == HTTP_INTERNAL_SERVER_ERROR) {
+        log_trace();
+    }
 
     err->status = status;
     err->error_id = error_id;
@@ -73,6 +103,11 @@ DAV_DECLARE(dav_error*) dav_push_error(apr_pool_t *p, int status,
                                        dav_error *prev)
 {
     dav_error *err = apr_pcalloc(p, sizeof(*err));
+
+    /* if status is 500, log a backtrace */
+    if (status == HTTP_INTERNAL_SERVER_ERROR) {
+        log_trace();
+    }
 
     err->status = status;
     err->error_id = error_id;
