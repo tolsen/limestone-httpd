@@ -519,6 +519,9 @@ static apr_status_t dbd_construct(void **data_ptr,
         return rv;
     }
 
+    ap_log_error(APLOG_MARK, APLOG_ERR, rv, cfg->server,
+                 "DBD: mod_dbd opened connection to database");
+
     apr_pool_cleanup_register(rec->pool, rec, dbd_close,
                               apr_pool_cleanup_null);
 
